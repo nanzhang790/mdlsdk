@@ -67,13 +67,14 @@ function(FIND_OPENGL_EXT)
 
     # extend find GLEW
     set(_SAVED_GLEW_DIR ${GLEW_DIR}) # since cmake 3.15 FindGLEW overrides our GLEW_DIR variable
-    find_package(GLEW QUIET)
+    #find_package(GLEW)
     if(GLEW_FOUND)
         set(_GLEW_INCLUDE ${GLEW_INCLUDE_DIR})
         set(_GLEW_SHARED GLEW::GLEW)
     else()
         # restore saved dir
-        set(GLEW_DIR ${_SAVED_GLEW_DIR} CACHE PATH "Directory that contains the glew include dir, libs and binaries" FORCE)
+        #set(GLEW_DIR ${_SAVED_GLEW_DIR} CACHE PATH "Directory that contains the glew include dir, libs and binaries" FORCE)
+        set(GLEW_DIR ${CMAKE_SOURCE_DIR}/../glew-2.1.0 CACHE PATH "Directory that contains the glew include dir, libs and binaries" FORCE)
 
         # try to find GLEW manually
         set(_GLEW_INCLUDE "NOTFOUND")
