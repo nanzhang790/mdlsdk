@@ -1,0 +1,55 @@
+mdl 1.4;
+
+import anno::*;
+import df::*;
+import math::*;
+import state::*;
+import tex::*;
+
+// non-exported functions used in bodies
+//--------------------------------------------------------------------------------------------------
+
+color float3_to_color_x_2(float3 x) {
+    return color(2 * x);
+}
+
+// main material/function
+//--------------------------------------------------------------------------------------------------
+
+// exported functions without parameters for each default value
+export color main_a() {
+    return float3_to_color_x_2(state::texture_coordinate(0));
+};
+
+export texture_2d main_b() {
+    return texture_2d("resources/example.png", ::tex::gamma_default);
+};
+
+// main material
+export material main(
+    color a = main_a(),     // uses the exported functions as default, allows de/attaching 
+    texture_2d b = main_b()
+) = let {
+    float3 tex_coord = state::texture_coordinate(0);
+} in material(
+    surface: material_surface(
+        scattering: df::diffuse_reflection_bsdf(
+            tint: a * color(tex::lookup_float3(b, float2(tex_coord.x, tex_coord.y)))
+        )
+    )
+);
+
+// possible extension for variants:
+//--------------------------------------------------------------------------------------------------
+
+// another set of default value functions
+export color variantX_a() {
+    return color(0.25, 0.5, 0.75);  // note, these functions always look like "return x(...);"
+};                                  // this allows easy inspection if required
+
+export texture_2d variantXn_b() {
+    return texture_2d("resources/example_variantX.png", ::tex::gamma_default);
+};
+
+export material variantX( * )
+= main(a = variantX_a, b = variantX_b); 
