@@ -26,12 +26,12 @@
 // In this example, this would only apply to execution_material_2, because the others are using
 // lookup tables for noise functions.
 #ifdef MI_PLATFORM_MACOSX
-    #define MAX_MATERIALS 16
-    #define MAX_TEXTURES 16
+    const int MAX_MATERIALS = 16;
+    const int MAX_TEXTURES = 16;
 #else
     //#define USE_SSBO
-    #define MAX_MATERIALS 64
-    #define MAX_TEXTURES 64
+    const int MAX_MATERIALS = 64;
+    const int MAX_TEXTURES = 32;
 #endif
 
 // If defined, the GLSL backend will remap these functions
@@ -191,38 +191,52 @@ static std::string generate_glsl_switch_func(
 static GLuint create_shader_program(
     const mi::base::Handle<const mi::neuraylib::ITarget_code>& target_code)
 {
-    GLint success;
+    const GLuint program = glCreateProgram();
 
-    GLuint program = glCreateProgram();
+    //vertex program
+    if (program) {
+        const std::string vs = read_text_file(get_executable_folder() + "/" + vertex_shader_filename);
+        std::cout << vs << std::endl << std::endl;
+        add_shader(GL_VERTEX_SHADER, vs, program);
+    }
 
-    add_shader(GL_VERTEX_SHADER, 
-        read_text_file(get_executable_folder() + "/" + vertex_shader_filename), program);
+    //fragment program 1
+    if (program) {
+        std::stringstream sstr;
+        sstr << "#version 330 core\n";
+        sstr << "#define MAX_MATERIALS " << to_string(MAX_MATERIALS) << "\n";
+        sstr << "#define MAX_TEXTURES " << to_string(MAX_TEXTURES) << "\n";
+        sstr << read_text_file(get_executable_folder() + "/" + fragment_shader_filename);
+        const std::string fp = sstr.str();
+        std::cout << "Fragment program 1:\n" << fp << std::endl << std::endl;
+        add_shader(GL_FRAGMENT_SHADER, fp, program);
+    }
 
-    std::stringstream sstr; 
-    sstr << "#version 330 core\n";
-    sstr << "#define MAX_MATERIALS " << to_string(MAX_MATERIALS) << "\n";
-    sstr << "#define MAX_TEXTURES " << to_string(MAX_TEXTURES) << "\n";
-    sstr << read_text_file(get_executable_folder() + "/" + fragment_shader_filename);
-    add_shader(GL_FRAGMENT_SHADER, sstr.str() , program);
-
-    std::string code(target_code->get_code());
+    //fragment program 2, MDL implementation
+    if (program) {
+        std::string code(target_code->get_code());
 #ifdef REMAP_NOISE_FUNCTIONS
-    code.append(read_text_file(get_executable_folder() + "/" + "noise_no_lut.glsl"));
+        code.append(read_text_file(get_executable_folder() + "/" + "noise_no_lut.glsl"));
 #endif
+        std::cout << "Fragment program 2:\n" << code << std::endl << std::endl;
+        add_shader(GL_FRAGMENT_SHADER, code, program);
+    }
 
-    add_shader(GL_FRAGMENT_SHADER, code, program);
-
-    // Generate GLSL switch function for the generated functions
-    std::string glsl_switch_func = generate_glsl_switch_func(target_code);
-
+    //fragment program 3, selection 
+    if (program) {
+        // Generate GLSL switch function for the generated functions
+        const std::string glsl_switch_func = generate_glsl_switch_func(target_code);
 #ifdef DUMP_GLSL
-    std::cout << "Dumping GLSL code for the \"mdl_mat_subexpr\" switch function:\n\n"
-        << glsl_switch_func << std::endl;
+        std::cout << "Dumping GLSL code for the \"mdl_mat_subexpr\" switch function:\n\n"
+            << glsl_switch_func << std::endl;
 #endif
-
-    add_shader(GL_FRAGMENT_SHADER, glsl_switch_func.c_str(), program);
+        std::cout << "Fragment program 3:\n" << glsl_switch_func << std::endl << std::endl;
+        add_shader(GL_FRAGMENT_SHADER, glsl_switch_func, program);
+    }
 
     glLinkProgram(program);
+
+    GLint success = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         dump_program_info(program, "Error linking the shader program: ");
@@ -935,11 +949,11 @@ void show_and_animate_scene(
     GLFWwindow *window = init_opengl(options);
 
     // Create shader program
-    GLuint program = create_shader_program(target_code);
+    const GLuint program = create_shader_program(target_code);
 
     // Create scene data
     GLuint quad_vertex_buffer;
-    GLuint quad_vao = create_quad(program, &quad_vertex_buffer);
+    const GLuint quad_vao = create_quad(program, &quad_vertex_buffer);
 
     // Scope for material context resources
     {
@@ -955,7 +969,7 @@ void show_and_animate_scene(
 
         if (!options.no_window) {
             GLfloat animation_time = 0;
-            double  last_frame_time = glfwGetTime();
+            double last_frame_time = glfwGetTime();
 
             glfwSetWindowUserPointer(window, &window_context);
             glfwSetKeyCallback(window, handle_key);
@@ -965,7 +979,7 @@ void show_and_animate_scene(
             while (!glfwWindowShouldClose(window))
             {
                 // Update animation time
-                double cur_frame_time = glfwGetTime();
+                const double cur_frame_time = glfwGetTime();
                 animation_time += GLfloat(cur_frame_time - last_frame_time);
                 last_frame_time = cur_frame_time;
 
@@ -992,8 +1006,7 @@ void show_and_animate_scene(
             glGenRenderbuffers(1, &color_buffer);
             glBindRenderbuffer(GL_RENDERBUFFER, color_buffer);
             glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, options.res_x, options.res_y);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, color_buffer);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color_buffer);
             check_gl_success();
 
             // Set uniform frame parameters
@@ -1013,8 +1026,7 @@ void show_and_animate_scene(
             mi::base::Handle<mi::neuraylib::ICanvas> canvas(
                 image_api->create_canvas("Rgba", options.res_x, options.res_y));
             mi::base::Handle<mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
-            glReadPixels(0, 0, options.res_x, options.res_y,
-                GL_RGBA, GL_UNSIGNED_BYTE, tile->get_data());
+            glReadPixels(0, 0, options.res_x, options.res_y, GL_RGBA, GL_UNSIGNED_BYTE, tile->get_data());
 
             // Save the image to disk
             mdl_compiler->export_canvas(options.outputfile.c_str(), canvas.get());
@@ -1094,10 +1106,8 @@ int main(int argc, char* argv[])
     // Access the MDL SDK
     auto han = load_and_get_ineuray();
     mi::base::Handle<mi::neuraylib::INeuray> neuray(han);
-    printf("Being here %d\n", __LINE__);
 
     check_success(neuray.is_valid_interface());
-    printf("Being here %d\n", __LINE__);
 
     // Configure the MDL SDK
     configure(neuray.get());
@@ -1105,7 +1115,6 @@ int main(int argc, char* argv[])
     // Start the MDL SDK
     mi::Sint32 result = neuray->start();
     check_start_success(result);
-    printf("Being here %d", __LINE__);
 
     {
         // Create a transaction
@@ -1121,14 +1130,12 @@ int main(int argc, char* argv[])
         // Create a material compiler 
         mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
             neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
-        printf("Being here %d", __LINE__);
 
         // Access the MDL SDK compiler component
         Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get());
 
         {
             // Add material sub-expressions of different materials to the link unit.
-            printf("Being here %d", __LINE__);
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
             // this uses a lot of constant data
             mc.add_material_subexpr(
