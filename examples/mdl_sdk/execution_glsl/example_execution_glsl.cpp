@@ -252,7 +252,7 @@ static GLuint create_shader_program(
 // Create a quad filling the whole screen.
 static GLuint create_quad(GLuint program, GLuint* vertex_buffer)
 {
-    static Vertex const vertices[6] = {
+    const Vertex const vertices[6] = {
         { { -1.f, -1.f, 0.0f }, { 0.f, 0.f } },
         { {  1.f, -1.f, 0.0f }, { 1.f, 0.f } },
         { { -1.f,  1.f, 0.0f }, { 0.f, 1.f } },
@@ -265,18 +265,17 @@ static GLuint create_quad(GLuint program, GLuint* vertex_buffer)
     glBindBuffer(GL_ARRAY_BUFFER, *vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    GLuint vertex_array;
+    GLuint vertex_array = 0;
     glGenVertexArrays(1, &vertex_array);
     glBindVertexArray(vertex_array);
 
     // Get locations of vertex shader inputs
-    GLint   pos_index              = glGetAttribLocation(program, "Position");
-    GLint   tex_coord_index        = glGetAttribLocation(program, "TexCoord");
+    const GLint pos_index = glGetAttribLocation(program, "Position");
+    const GLint tex_coord_index = glGetAttribLocation(program, "TexCoord");
     check_success(pos_index >= 0 && tex_coord_index >= 0);
 
     glEnableVertexAttribArray(pos_index);
-    glVertexAttribPointer(
-        pos_index, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+    glVertexAttribPointer(pos_index, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
 
     glEnableVertexAttribArray(tex_coord_index);
     glVertexAttribPointer(
@@ -824,10 +823,10 @@ bool Material_compiler::add_material_subexpr(
     mi::base::Handle<mi::neuraylib::ICompiled_material> compiled_material(
         compile_material_instance(material_instance.get(), /*class_compilation=*/false));
 
+    m_link_unit->add_material_expression(compiled_material.get(), path, fname, m_context.get());
 
-    m_link_unit->add_material_expression(compiled_material.get(), path, fname, 
-        m_context.get());
-    return print_messages(m_context.get());
+    auto context = m_context.get();
+    return print_messages(context);
 }
 
 // Constructor.
@@ -835,11 +834,11 @@ Material_compiler::Material_compiler(
     mi::neuraylib::IMdl_compiler* mdl_compiler,
     mi::neuraylib::IMdl_factory* mdl_factory,
     mi::neuraylib::ITransaction* transaction)
-: m_mdl_compiler(mi::base::make_handle_dup(mdl_compiler))
-, m_be_glsl(mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL))
-, m_transaction(mi::base::make_handle_dup(transaction))
-, m_context(mdl_factory->create_execution_context())
-, m_link_unit()
+    : m_mdl_compiler(mi::base::make_handle_dup(mdl_compiler))
+    , m_be_glsl(mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL))
+    , m_transaction(mi::base::make_handle_dup(transaction))
+    , m_context(mdl_factory->create_execution_context())
+    , m_link_unit()
 {
     check_success(m_be_glsl->set_option("num_texture_spaces", "1") == 0);
 
@@ -868,7 +867,8 @@ Material_compiler::Material_compiler(
 
 #ifdef REMAP_NOISE_FUNCTIONS
     // remap noise functions that access the constant tables
-    check_success(m_be_glsl->set_option("glsl_remap_functions",
+    check_success(m_be_glsl->set_option(
+        "glsl_remap_functions",
         "_ZN4base12perlin_noiseEu6float4=noise_float4"
         ",_ZN4base12worley_noiseEu6float3fi=noise_worley"
         ",_ZN4base8mi_noiseEu6float3=noise_mi_float3"
@@ -899,8 +899,9 @@ void handle_key(GLFWwindow *window, int key, int /*scancode*/, int action, int /
     // Handle key press events
     if (action == GLFW_PRESS) {
         // Map keypad numbers to normal numbers
-        if (GLFW_KEY_KP_0 <= key && key <= GLFW_KEY_KP_9)
+        if (GLFW_KEY_KP_0 <= key && key <= GLFW_KEY_KP_9) {
             key += GLFW_KEY_0 - GLFW_KEY_KP_0;
+        }
 
         switch (key) {
             // Escape closes the window
@@ -917,8 +918,7 @@ void handle_key(GLFWwindow *window, int key, int /*scancode*/, int action, int /
             case GLFW_KEY_6:
             case GLFW_KEY_7:
             {
-                Window_context *ctx = static_cast<Window_context*>(
-                    glfwGetWindowUserPointer(window));
+                auto ctx = (Window_context*)glfwGetWindowUserPointer(window);
                 ctx->material_pattern = key - GLFW_KEY_0;
                 break;
             }
@@ -952,20 +952,19 @@ void show_and_animate_scene(
     const GLuint program = create_shader_program(target_code);
 
     // Create scene data
-    GLuint quad_vertex_buffer;
+    GLuint quad_vertex_buffer = 0;
     const GLuint quad_vao = create_quad(program, &quad_vertex_buffer);
 
     // Scope for material context resources
     {
         // Prepare the needed material data of all target codes for the fragment shader
         Material_opengl_context material_opengl_context(program);
-        check_success(material_opengl_context.prepare_material_data(
-                transaction, image_api, target_code));
+        check_success(material_opengl_context.prepare_material_data(transaction, image_api, target_code));
         check_success(material_opengl_context.set_material_data());
 
         // Get locations of uniform parameters for fragment shader
-        GLint   material_pattern_index = glGetUniformLocation(program, "material_pattern");
-        GLint   animation_time_index   = glGetUniformLocation(program, "animation_time");
+        const GLint material_pattern_index = glGetUniformLocation(program, "material_pattern");
+        const GLint animation_time_index = glGetUniformLocation(program, "animation_time");
 
         if (!options.no_window) {
             GLfloat animation_time = 0;
@@ -998,7 +997,8 @@ void show_and_animate_scene(
                 // Poll for events and process them
                 glfwPollEvents();
             }
-        } else {  // no_window
+        } 
+        else {  // no_window
             // Set up frame buffer
             GLuint frame_buffer = 0, color_buffer = 0;
             glGenFramebuffers(1, &frame_buffer);
@@ -1062,18 +1062,9 @@ void usage(char const *prog_name)
     exit(EXIT_FAILURE);
 }
 
-//------------------------------------------------------------------------------
-//
-// Main function
-//
-//------------------------------------------------------------------------------
 
-int main(int argc, char* argv[])
+static void parse(int argc, char **argv, Options &options)
 {
-    // Parse command line options
-    Options options;
-    printf("Being here %d\n", __LINE__);
-
     for (int i = 1; i < argc; ++i) {
         char const *opt = argv[i];
         if (opt[0] == '-') {
@@ -1089,12 +1080,14 @@ int main(int argc, char* argv[])
                 if (i < argc - 2) {
                     options.res_x = std::max(atoi(argv[++i]), 1);
                     options.res_y = std::max(atoi(argv[++i]), 1);
-                } else
+                }
+                else
                     usage(argv[0]);
             }
             else
                 usage(argv[0]);
-        } else {
+        }
+        else {
             options.material_pattern = unsigned(atoi(opt));
             if (options.material_pattern < 1 || options.material_pattern > 7) {
                 std::cerr << "Invalid material_pattern parameter." << std::endl;
@@ -1102,11 +1095,23 @@ int main(int argc, char* argv[])
             }
         }
     }
+}
+
+//------------------------------------------------------------------------------
+//
+// Main function
+//
+//------------------------------------------------------------------------------
+
+int main(int argc, char* argv[])
+{
+    // Parse command line options
+    Options options;
+    parse(argc, argv, options);
 
     // Access the MDL SDK
     auto han = load_and_get_ineuray();
     mi::base::Handle<mi::neuraylib::INeuray> neuray(han);
-
     check_success(neuray.is_valid_interface());
 
     // Configure the MDL SDK
@@ -1132,8 +1137,7 @@ int main(int argc, char* argv[])
             neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
 
         // Access the MDL SDK compiler component
-        Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get());
-
+        Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get()); 
         {
             // Add material sub-expressions of different materials to the link unit.
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
@@ -1168,7 +1172,7 @@ int main(int argc, char* argv[])
 
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
-    neuray = 0;
+    neuray = nullptr;
 
     // Unload the MDL SDK
     check_success(unload());
@@ -1176,3 +1180,5 @@ int main(int argc, char* argv[])
     keep_console_open();
     return EXIT_SUCCESS;
 }
+
+
