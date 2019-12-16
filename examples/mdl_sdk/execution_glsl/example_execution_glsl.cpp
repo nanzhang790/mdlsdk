@@ -1142,8 +1142,8 @@ int main(int argc, char* argv[])
             mc.add_material_subexpr(
                     "::nvidia::sdk_examples::tutorials::example_execution1",
                     "surface.scattering.tint", "tint");
+#else
 #endif
-
             mc.add_material_subexpr(
                     "::nvidia::sdk_examples::tutorials::example_execution2",
                     "surface.scattering.tint", "tint_2");
