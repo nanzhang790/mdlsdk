@@ -10,7 +10,6 @@
 
 #include <iomanip>
 #include <iostream>
-
 #include <string>
 #include <vector>
 
@@ -1180,5 +1179,4 @@ int main(int argc, char* argv[])
     keep_console_open();
     return EXIT_SUCCESS;
 }
-
 
