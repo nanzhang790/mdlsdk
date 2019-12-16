@@ -424,9 +424,10 @@ void Material_opengl_context::set_mdl_readonly_data(
         if (uniform_indices[i] == GL_INVALID_INDEX)
             continue;
 
-        GLint uniform_type = 0;
-        GLuint index = GLuint(uniform_indices[i]);
-        glGetActiveUniformsiv(m_program, 1, &index, GL_UNIFORM_TYPE, &uniform_type);
+        GLint uniform_type = 0; {
+            GLuint index = GLuint(uniform_indices[i]);
+            glGetActiveUniformsiv(m_program, 1, &index, GL_UNIFORM_TYPE, &uniform_type);
+        }
         
 #ifdef DUMP_GLSL
         std::cout << "Uniform type of " << uniform_names[i]
@@ -527,19 +528,16 @@ bool Material_opengl_context::prepare_texture(
     mi::base::Handle<const mi::neuraylib::IImage> image(
         transaction->access<mi::neuraylib::IImage>(texture->get_image()));
     mi::base::Handle<const mi::neuraylib::ICanvas> canvas(image->get_canvas());
-    mi::Uint32 tex_width = canvas->get_resolution_x();
-    mi::Uint32 tex_height = canvas->get_resolution_y();
-    mi::Uint32 tex_layers = canvas->get_layers_size();
-    char const *image_type = image->get_type();
-
     if (canvas->get_tiles_size_x() != 1 || canvas->get_tiles_size_y() != 1) {
         std::cerr << "The example does not support tiled images!" << std::endl;
         return false;
     }
-
-    if (tex_layers != 1) {
-        std::cerr << "The example and the GLSL backend don't support layered images!" << std::endl;
-        return false;
+    else {
+        const mi::Uint32 tex_layers = canvas->get_layers_size();
+        if (tex_layers != 1) {
+            std::cerr << "The example and the GLSL backend don't support layered images!" << std::endl;
+            return false;
+        }
     }
 
     // For simplicity, the texture access functions are only implemented for float4 and gamma
@@ -553,21 +551,24 @@ bool Material_opengl_context::prepare_texture(
         gamma_canvas->set_gamma(texture->get_effective_gamma());
         image_api->adjust_gamma(gamma_canvas.get(), 1.0f);
         canvas = gamma_canvas;
-    } else if (strcmp(image_type, "Color") != 0 && strcmp(image_type, "Float32<4>") != 0) {
-        // Convert to expected format
-        canvas = image_api->convert(canvas.get(), "Color");
+    } 
+    else{
+        char const *image_type = image->get_type();
+        if (strcmp(image_type, "Color") != 0 && strcmp(image_type, "Float32<4>") != 0) {
+            // Convert to expected format
+            canvas = image_api->convert(canvas.get(), "Color");
+        }
     }
 
     // This example supports only 2D textures
-    mi::neuraylib::ITarget_code::Texture_shape texture_shape =
-        code->get_texture_shape(texture_index);
+    const auto texture_shape = code->get_texture_shape(texture_index);
     if (texture_shape == mi::neuraylib::ITarget_code::Texture_shape_2d) {
+        const mi::Uint32 tex_width = canvas->get_resolution_x();
+        const mi::Uint32 tex_height = canvas->get_resolution_y();
         mi::base::Handle<const mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
-        mi::Float32 const *data = static_cast<mi::Float32 const *>(tile->get_data());
-
         glBindTexture(GL_TEXTURE_2D, texture_obj);
         glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0,  GL_RGBA, GL_FLOAT, data);
+            GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0,  GL_RGBA, GL_FLOAT, tile->get_data());
 
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -591,7 +592,7 @@ bool Material_opengl_context::prepare_material_data(
     size_t cur_tex_offs = m_texture_objects.size();
     m_material_texture_starts.push_back(GLuint(cur_tex_offs));
 
-    mi::Size num_textures = target_code->get_texture_count();
+    const mi::Size num_textures = target_code->get_texture_count();
     if (num_textures > 1) {
         m_texture_objects.insert(m_texture_objects.end(), num_textures - 1, 0);
 
@@ -725,8 +726,7 @@ private:
     mi::base::Handle<mi::neuraylib::IMdl_compiler> m_mdl_compiler;
     mi::base::Handle<mi::neuraylib::IMdl_backend>  m_be_glsl;
     mi::base::Handle<mi::neuraylib::ITransaction>  m_transaction;
-    mi::base::Handle<mi::neuraylib::IMdl_execution_context>
-                                                   m_context;
+    mi::base::Handle<mi::neuraylib::IMdl_execution_context> m_context;
     mi::base::Handle<mi::neuraylib::ILink_unit> m_link_unit;
 };
 
@@ -1129,7 +1129,7 @@ int main(int argc, char* argv[])
 
         // Access MDL factory
         mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
-        neuray->get_api_component<mi::neuraylib::IMdl_factory>());
+            neuray->get_api_component<mi::neuraylib::IMdl_factory>());
 
         // Create a material compiler 
         mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
