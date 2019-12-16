@@ -251,7 +251,7 @@ static GLuint create_shader_program(
 // Create a quad filling the whole screen.
 static GLuint create_quad(GLuint program, GLuint* vertex_buffer)
 {
-    const Vertex const vertices[6] = {
+    const Vertex vertices[6] = {
         { { -1.f, -1.f, 0.0f }, { 0.f, 0.f } },
         { {  1.f, -1.f, 0.0f }, { 1.f, 0.f } },
         { { -1.f,  1.f, 0.0f }, { 0.f, 1.f } },
@@ -356,7 +356,7 @@ Material_opengl_context::~Material_opengl_context()
 void Material_opengl_context::set_mdl_readonly_data(
     mi::base::Handle<const mi::neuraylib::ITarget_code> target_code)
 {
-    mi::Size num_uniforms = target_code->get_ro_data_segment_count();
+    const int num_uniforms = target_code->get_ro_data_segment_count();
     if (num_uniforms == 0) return;
 
 #ifdef USE_SSBO
@@ -365,7 +365,7 @@ void Material_opengl_context::set_mdl_readonly_data(
 
     glGenBuffers(GLsizei(num_uniforms), &m_buffer_objects[cur_buffer_offs]);
 
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
+    for (int i = 0; i < num_uniforms; ++i) {
         mi::Size segment_size = target_code->get_ro_data_segment_size(i);
         char const* segment_data = target_code->get_ro_data_segment_data(i);
 
@@ -398,8 +398,8 @@ void Material_opengl_context::set_mdl_readonly_data(
     }
 #else
     std::vector<char const*> uniform_names;
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
-#ifdef DUMP_GLSL
+    for (int i = 0; i < num_uniforms; ++i) {
+//#ifdef DUMP_GLSL
         mi::Size segment_size = target_code->get_ro_data_segment_size(i);
         const char* segment_data = target_code->get_ro_data_segment_data(i);
 
@@ -411,7 +411,7 @@ void Material_opengl_context::set_mdl_readonly_data(
             std::cout << "0x" << (unsigned int)(unsigned char)segment_data[i] << ", ";
         }
         std::cout << std::dec << std::endl;
-#endif
+//#endif
 
         uniform_names.push_back(target_code->get_ro_data_segment_name(i));
     }
@@ -419,7 +419,7 @@ void Material_opengl_context::set_mdl_readonly_data(
     std::vector<GLuint> uniform_indices(num_uniforms, 0);
     glGetUniformIndices(m_program, GLsizei(num_uniforms), &uniform_names[0], &uniform_indices[0]);
 
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
+    for (int i = 0; i < num_uniforms; ++i) {
         // uniforms may have been removed, if they were not used
         if (uniform_indices[i] == GL_INVALID_INDEX)
             continue;
@@ -438,6 +438,7 @@ void Material_opengl_context::set_mdl_readonly_data(
         const char* segment_data = target_code->get_ro_data_segment_data(i);
 
         GLint uniform_location = glGetUniformLocation(m_program, uniform_names[i]);
+        printf("====Uniform name is %s\n",  uniform_names[i]);
 
         switch (uniform_type) {
 
@@ -567,9 +568,7 @@ bool Material_opengl_context::prepare_texture(
         const mi::Uint32 tex_height = canvas->get_resolution_y();
         mi::base::Handle<const mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
         glBindTexture(GL_TEXTURE_2D, texture_obj);
-        glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0,  GL_RGBA, GL_FLOAT, tile->get_data());
-
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0,  GL_RGBA, GL_FLOAT, tile->get_data());
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
@@ -589,10 +588,10 @@ bool Material_opengl_context::prepare_material_data(
     set_mdl_readonly_data(target_code);
 
     // Handle the textures if there are more than just the invalid texture
-    size_t cur_tex_offs = m_texture_objects.size();
+    const int cur_tex_offs = m_texture_objects.size();
     m_material_texture_starts.push_back(GLuint(cur_tex_offs));
 
-    const mi::Size num_textures = target_code->get_texture_count();
+    const int num_textures = target_code->get_texture_count();
     if (num_textures > 1) {
         m_texture_objects.insert(m_texture_objects.end(), num_textures - 1, 0);
 
@@ -600,11 +599,10 @@ bool Material_opengl_context::prepare_material_data(
 
         // Loop over all textures skipping the first texture,
         // which is always the MDL invalid texture
-        for (mi::Size i = 1; i < num_textures; ++i) {
-            if (!prepare_texture(
-                    transaction, image_api, target_code,
-                    i, m_texture_objects[cur_tex_offs + i - 1]))
+        for (int i = 1; i < num_textures; ++i) {
+            if (!prepare_texture(transaction, image_api, target_code, i, m_texture_objects[cur_tex_offs + i - 1])){
                 return false;
+            }
         }
     }
 
