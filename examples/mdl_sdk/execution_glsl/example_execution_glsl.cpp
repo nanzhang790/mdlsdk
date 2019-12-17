@@ -42,7 +42,15 @@
 //
 // to lut-free alternatives. When enabled, you can avoid to set the USE_SSBO define for this 
 // example.
-#define REMAP_NOISE_FUNCTIONS
+//#define REMAP_NOISE_FUNCTIONS
+
+inline bool use_ssbo() {
+#if defined(USE_SSBO)
+    return true;
+#else
+    return false;
+#endif
+}
 
 
 // Enable this to dump the generated GLSL code to stdout.
@@ -94,15 +102,16 @@ static GLFWwindow *init_opengl(Options const &options)
     // Initialize GLFW
     check_success(glfwInit());
 
-#ifdef USE_SSBO
-    // SSBO requires GLSL 4.30
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-#else
-    // else GLSL 3.30 is sufficient
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-#endif
+    if (use_ssbo()) {
+        // SSBO requires GLSL 4.30
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    }
+    else {
+        // else GLSL 3.30 is sufficient
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    }
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
@@ -362,88 +371,89 @@ void Material_opengl_context::set_mdl_readonly_data(
     mi::Size num_uniforms = target_code->get_ro_data_segment_count();
     if (num_uniforms == 0) return;
 
-#ifdef USE_SSBO
-    size_t cur_buffer_offs = m_buffer_objects.size();
-    m_buffer_objects.insert(m_buffer_objects.end(), num_uniforms, 0);
+    if (use_ssbo) {
+        size_t cur_buffer_offs = m_buffer_objects.size();
+        m_buffer_objects.insert(m_buffer_objects.end(), num_uniforms, 0);
 
-    glGenBuffers(GLsizei(num_uniforms), &m_buffer_objects[cur_buffer_offs]);
+        glGenBuffers(GLsizei(num_uniforms), &m_buffer_objects[cur_buffer_offs]);
 
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
-        mi::Size segment_size = target_code->get_ro_data_segment_size(i);
-        char const* segment_data = target_code->get_ro_data_segment_data(i);
+        for (mi::Size i = 0; i < num_uniforms; ++i) {
+            mi::Size segment_size = target_code->get_ro_data_segment_size(i);
+            char const* segment_data = target_code->get_ro_data_segment_data(i);
 
 #ifdef DUMP_GLSL
-        std::cout << "Dump ro segment data " << i << " \""
-            << target_code->get_ro_data_segment_name(i) << "\" (size = "
-            << segment_size << "):\n" << std::hex;
+            std::cout << "Dump ro segment data " << i << " \""
+                << target_code->get_ro_data_segment_name(i) << "\" (size = "
+                << segment_size << "):\n" << std::hex;
 
-        for (int j = 0; j < 16 && j < segment_size; ++j) {
-            std::cout << "0x" << (unsigned int)(unsigned char)segment_data[j] << ", ";
+            for (int j = 0; j < 16 && j < segment_size; ++j) {
+                std::cout << "0x" << (unsigned int)(unsigned char)segment_data[j] << ", ";
+            }
+            std::cout << std::dec << std::endl;
+#endif
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_buffer_objects[cur_buffer_offs + i]);
+            glBufferData(
+                GL_SHADER_STORAGE_BUFFER, GLsizeiptr(segment_size), segment_data, GL_STATIC_DRAW);
+
+            GLuint block_index = glGetProgramResourceIndex(
+                m_program, GL_SHADER_STORAGE_BLOCK, target_code->get_ro_data_segment_name(i));
+            glShaderStorageBlockBinding(m_program, block_index, m_next_storage_block_binding);
+            glBindBufferBase(
+                GL_SHADER_STORAGE_BUFFER,
+                m_next_storage_block_binding,
+                m_buffer_objects[cur_buffer_offs + i]);
+
+            ++m_next_storage_block_binding;
+
+            check_gl_success();
         }
-        std::cout << std::dec << std::endl;
+    }
+    else {
+        std::vector<char const*> uniform_names;
+        for (mi::Size i = 0; i < num_uniforms; ++i) {
+#ifdef DUMP_GLSL
+            mi::Size segment_size = target_code->get_ro_data_segment_size(i);
+            const char* segment_data = target_code->get_ro_data_segment_data(i);
+
+            std::cout << "Dump ro segment data " << i << " \""
+                << target_code->get_ro_data_segment_name(i) << "\" (size = "
+                << segment_size << "):\n" << std::hex;
+
+            for (int i = 0; i < 16 && i < segment_size; ++i) {
+                std::cout << "0x" << (unsigned int)(unsigned char)segment_data[i] << ", ";
+            }
+            std::cout << std::dec << std::endl;
 #endif
 
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_buffer_objects[cur_buffer_offs + i]);
-        glBufferData(
-            GL_SHADER_STORAGE_BUFFER, GLsizeiptr(segment_size), segment_data, GL_STATIC_DRAW);
-
-        GLuint block_index = glGetProgramResourceIndex(
-            m_program, GL_SHADER_STORAGE_BLOCK, target_code->get_ro_data_segment_name(i));
-        glShaderStorageBlockBinding(m_program, block_index, m_next_storage_block_binding);
-        glBindBufferBase(
-            GL_SHADER_STORAGE_BUFFER,
-            m_next_storage_block_binding,
-            m_buffer_objects[cur_buffer_offs + i]);
-
-        ++m_next_storage_block_binding;
-
-        check_gl_success();
-    }
-#else
-    std::vector<char const*> uniform_names;
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
-#ifdef DUMP_GLSL
-        mi::Size segment_size = target_code->get_ro_data_segment_size(i);
-        const char* segment_data = target_code->get_ro_data_segment_data(i);
-
-        std::cout << "Dump ro segment data " << i << " \""
-            << target_code->get_ro_data_segment_name(i) << "\" (size = "
-            << segment_size << "):\n" << std::hex;
-
-        for (int i = 0; i < 16 && i < segment_size; ++i) {
-            std::cout << "0x" << (unsigned int)(unsigned char)segment_data[i] << ", ";
+            uniform_names.push_back(target_code->get_ro_data_segment_name(i));
         }
-        std::cout << std::dec << std::endl;
-#endif
 
-        uniform_names.push_back(target_code->get_ro_data_segment_name(i));
-    }
+        std::vector<GLuint> uniform_indices(num_uniforms, 0);
+        glGetUniformIndices(m_program, GLsizei(num_uniforms), &uniform_names[0], &uniform_indices[0]);
 
-    std::vector<GLuint> uniform_indices(num_uniforms, 0);
-    glGetUniformIndices(m_program, GLsizei(num_uniforms), &uniform_names[0], &uniform_indices[0]);
+        for (mi::Size i = 0; i < num_uniforms; ++i) {
+            // uniforms may have been removed, if they were not used
+            if (uniform_indices[i] == GL_INVALID_INDEX)
+                continue;
 
-    for (mi::Size i = 0; i < num_uniforms; ++i) {
-        // uniforms may have been removed, if they were not used
-        if (uniform_indices[i] == GL_INVALID_INDEX)
-            continue;
+            GLint uniform_type = 0;
+            GLuint index = GLuint(uniform_indices[i]);
+            glGetActiveUniformsiv(m_program, 1, &index, GL_UNIFORM_TYPE, &uniform_type);
 
-        GLint uniform_type = 0;
-        GLuint index = GLuint(uniform_indices[i]);
-        glGetActiveUniformsiv(m_program, 1, &index, GL_UNIFORM_TYPE, &uniform_type);
-        
 #ifdef DUMP_GLSL
-        std::cout << "Uniform type of " << uniform_names[i]
-            << ": 0x" << std::hex << uniform_type << std::dec << std::endl;
+            std::cout << "Uniform type of " << uniform_names[i]
+                << ": 0x" << std::hex << uniform_type << std::dec << std::endl;
 #endif
 
-        mi::Size segment_size = target_code->get_ro_data_segment_size(i);
-        const char* segment_data = target_code->get_ro_data_segment_data(i);
+            mi::Size segment_size = target_code->get_ro_data_segment_size(i);
+            const char* segment_data = target_code->get_ro_data_segment_data(i);
 
-        GLint uniform_location = glGetUniformLocation(m_program, uniform_names[i]);
+            GLint uniform_location = glGetUniformLocation(m_program, uniform_names[i]);
 
-        switch (uniform_type) {
+            switch (uniform_type) {
 
-// For bool, the data has to be converted to int, first
+                // For bool, the data has to be converted to int, first
 #define CASE_TYPE_BOOL(type, func, num)                            \
     case type: {                                                   \
         GLint *buf = new GLint[segment_size];                      \
@@ -454,10 +464,10 @@ void Material_opengl_context::set_mdl_readonly_data(
         break;                                                     \
     }
 
-            CASE_TYPE_BOOL(GL_BOOL,      glUniform1iv, 1)
-            CASE_TYPE_BOOL(GL_BOOL_VEC2, glUniform2iv, 2)
-            CASE_TYPE_BOOL(GL_BOOL_VEC3, glUniform3iv, 3)
-            CASE_TYPE_BOOL(GL_BOOL_VEC4, glUniform4iv, 4)
+                CASE_TYPE_BOOL(GL_BOOL, glUniform1iv, 1)
+                    CASE_TYPE_BOOL(GL_BOOL_VEC2, glUniform2iv, 2)
+                    CASE_TYPE_BOOL(GL_BOOL_VEC3, glUniform3iv, 3)
+                    CASE_TYPE_BOOL(GL_BOOL_VEC4, glUniform4iv, 4)
 
 #define CASE_TYPE(type, func, num, elemtype)                                      \
     case type:                                                                    \
@@ -465,18 +475,18 @@ void Material_opengl_context::set_mdl_readonly_data(
             (const elemtype*)segment_data);                                       \
         break
 
-            CASE_TYPE(GL_INT,             glUniform1iv, 1, GLint);
-            CASE_TYPE(GL_INT_VEC2,        glUniform2iv, 2, GLint);
-            CASE_TYPE(GL_INT_VEC3,        glUniform3iv, 3, GLint);
-            CASE_TYPE(GL_INT_VEC4,        glUniform4iv, 4, GLint);
-            CASE_TYPE(GL_FLOAT,           glUniform1fv, 1, GLfloat);
-            CASE_TYPE(GL_FLOAT_VEC2,      glUniform2fv, 2, GLfloat);
-            CASE_TYPE(GL_FLOAT_VEC3,      glUniform3fv, 3, GLfloat);
-            CASE_TYPE(GL_FLOAT_VEC4,      glUniform4fv, 4, GLfloat);
-            CASE_TYPE(GL_DOUBLE,          glUniform1dv, 1, GLdouble);
-            CASE_TYPE(GL_DOUBLE_VEC2,     glUniform2dv, 2, GLdouble);
-            CASE_TYPE(GL_DOUBLE_VEC3,     glUniform3dv, 3, GLdouble);
-            CASE_TYPE(GL_DOUBLE_VEC4,     glUniform4dv, 4, GLdouble);
+                    CASE_TYPE(GL_INT, glUniform1iv, 1, GLint);
+                CASE_TYPE(GL_INT_VEC2, glUniform2iv, 2, GLint);
+                CASE_TYPE(GL_INT_VEC3, glUniform3iv, 3, GLint);
+                CASE_TYPE(GL_INT_VEC4, glUniform4iv, 4, GLint);
+                CASE_TYPE(GL_FLOAT, glUniform1fv, 1, GLfloat);
+                CASE_TYPE(GL_FLOAT_VEC2, glUniform2fv, 2, GLfloat);
+                CASE_TYPE(GL_FLOAT_VEC3, glUniform3fv, 3, GLfloat);
+                CASE_TYPE(GL_FLOAT_VEC4, glUniform4fv, 4, GLfloat);
+                CASE_TYPE(GL_DOUBLE, glUniform1dv, 1, GLdouble);
+                CASE_TYPE(GL_DOUBLE_VEC2, glUniform2dv, 2, GLdouble);
+                CASE_TYPE(GL_DOUBLE_VEC3, glUniform3dv, 3, GLdouble);
+                CASE_TYPE(GL_DOUBLE_VEC4, glUniform4dv, 4, GLdouble);
 
 #define CASE_TYPE_MAT(type, func, num, elemtype)                                  \
     case type:                                                                    \
@@ -484,35 +494,35 @@ void Material_opengl_context::set_mdl_readonly_data(
             false, (const elemtype*)segment_data);                                \
         break
 
-            CASE_TYPE_MAT(GL_FLOAT_MAT2_ARB,  glUniformMatrix2fv,   4,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT2x3,    glUniformMatrix2x3fv, 6,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT3x2,    glUniformMatrix3x2fv, 6,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT2x4,    glUniformMatrix2x4fv, 8,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT4x2,    glUniformMatrix4x2fv, 8,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT3_ARB,  glUniformMatrix3fv,   9,  GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT3x4,    glUniformMatrix3x4fv, 12, GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT4x3,    glUniformMatrix4x3fv, 12, GLfloat);
-            CASE_TYPE_MAT(GL_FLOAT_MAT4_ARB,  glUniformMatrix4fv,   16, GLfloat);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT2,     glUniformMatrix2dv,   4,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT2x3,   glUniformMatrix2x3dv, 6,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT3x2,   glUniformMatrix3x2dv, 6,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT2x4,   glUniformMatrix2x4dv, 8,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT4x2,   glUniformMatrix4x2dv, 8,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT3,     glUniformMatrix3dv,   9,  GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT3x4,   glUniformMatrix3x4dv, 12, GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT4x3,   glUniformMatrix4x3dv, 12, GLdouble);
-            CASE_TYPE_MAT(GL_DOUBLE_MAT4,     glUniformMatrix4dv,   16, GLdouble);
+                CASE_TYPE_MAT(GL_FLOAT_MAT2_ARB, glUniformMatrix2fv, 4, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT2x3, glUniformMatrix2x3fv, 6, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT3x2, glUniformMatrix3x2fv, 6, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT2x4, glUniformMatrix2x4fv, 8, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT4x2, glUniformMatrix4x2fv, 8, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT3_ARB, glUniformMatrix3fv, 9, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT3x4, glUniformMatrix3x4fv, 12, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT4x3, glUniformMatrix4x3fv, 12, GLfloat);
+                CASE_TYPE_MAT(GL_FLOAT_MAT4_ARB, glUniformMatrix4fv, 16, GLfloat);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT2, glUniformMatrix2dv, 4, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT2x3, glUniformMatrix2x3dv, 6, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT3x2, glUniformMatrix3x2dv, 6, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT2x4, glUniformMatrix2x4dv, 8, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT4x2, glUniformMatrix4x2dv, 8, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT3, glUniformMatrix3dv, 9, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT3x4, glUniformMatrix3x4dv, 12, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT4x3, glUniformMatrix4x3dv, 12, GLdouble);
+                CASE_TYPE_MAT(GL_DOUBLE_MAT4, glUniformMatrix4dv, 16, GLdouble);
 
             default:
                 std::cerr << "Unsupported uniform type: 0x"
                     << std::hex << uniform_type << std::dec << std::endl;
                 terminate();
                 break;
-        }
+            }
 
-        check_gl_success();
+            check_gl_success();
+        }
     }
-#endif
 }
 
 // Prepare the texture identified by the texture_index for use by the texture access functions
@@ -625,56 +635,56 @@ bool Material_opengl_context::set_material_data()
         return false;
     }
 
-#ifdef USE_SSBO
-    if (glfwExtensionSupported("GL_ARB_bindless_texture"))
-    {
-        if (total_textures > 0) {
-            std::vector<GLuint64> texture_handles;
-            texture_handles.resize(total_textures);
-            for (GLsizei i = 0; i < total_textures; ++i) {
-                texture_handles[i] = glGetTextureHandleARB(m_texture_objects[i]);
-                glMakeTextureHandleResidentARB(texture_handles[i]);
+    if (use_ssbo()) {
+        if (glfwExtensionSupported("GL_ARB_bindless_texture"))
+        {
+            if (total_textures > 0) {
+                std::vector<GLuint64> texture_handles;
+                texture_handles.resize(total_textures);
+                for (GLsizei i = 0; i < total_textures; ++i) {
+                    texture_handles[i] = glGetTextureHandleARB(m_texture_objects[i]);
+                    glMakeTextureHandleResidentARB(texture_handles[i]);
+                }
+
+                glUniformHandleui64vARB(
+                    glGetUniformLocation(m_program, "material_texture_samplers_2d"),
+                    total_textures,
+                    &texture_handles[0]);
+
+                glUniform1uiv(
+                    glGetUniformLocation(m_program, "material_texture_starts"),
+                    GLsizei(m_material_texture_starts.size()),
+                    &m_material_texture_starts[0]);
             }
+        }
+        else if (glfwExtensionSupported("GL_NV_bindless_texture"))
+        {
+            if (total_textures > 0) {
+                std::vector<GLuint64> texture_handles;
+                texture_handles.resize(total_textures);
+                for (GLsizei i = 0; i < total_textures; ++i) {
+                    texture_handles[i] = glGetTextureHandleNV(m_texture_objects[i]);
+                    glMakeTextureHandleResidentNV(texture_handles[i]);
+                }
 
-            glUniformHandleui64vARB(
-                glGetUniformLocation(m_program, "material_texture_samplers_2d"),
-                total_textures,
-                &texture_handles[0]);
+                glUniformHandleui64vARB(
+                    glGetUniformLocation(m_program, "material_texture_samplers_2d"),
+                    total_textures,
+                    &texture_handles[0]);
 
-            glUniform1uiv(
-                glGetUniformLocation(m_program, "material_texture_starts"),
-                GLsizei(m_material_texture_starts.size()),
-                &m_material_texture_starts[0]);
+                glUniform1uiv(
+                    glGetUniformLocation(m_program, "material_texture_starts"),
+                    GLsizei(m_material_texture_starts.size()),
+                    &m_material_texture_starts[0]);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Sample requires Bindless Textures, "
+                "that are not supported by the current system.\n");
+            return false;
         }
     }
-    else if (glfwExtensionSupported("GL_NV_bindless_texture"))
-    {
-        if (total_textures > 0) {
-            std::vector<GLuint64> texture_handles;
-            texture_handles.resize(total_textures);
-            for (GLsizei i = 0; i < total_textures; ++i) {
-                texture_handles[i] = glGetTextureHandleNV(m_texture_objects[i]);
-                glMakeTextureHandleResidentNV(texture_handles[i]);
-            }
-
-            glUniformHandleui64vARB(
-                glGetUniformLocation(m_program, "material_texture_samplers_2d"),
-                total_textures,
-                &texture_handles[0]);
-
-            glUniform1uiv(
-                glGetUniformLocation(m_program, "material_texture_starts"),
-                GLsizei(m_material_texture_starts.size()),
-                &m_material_texture_starts[0]);
-        }
-    }
-    else
-    {
-        fprintf(stderr, "Sample requires Bindless Textures, "
-                        "that are not supported by the current system.\n");
-        return false;
-    }
-#endif  // USE_SSBO
 
     // Check for any errors. If you get an error, check whether MAX_TEXTURES and MAX_MATERIALS
     // in example_execution_glsl.frag still fit to your needs.
@@ -852,12 +862,13 @@ void Material_compiler::init(
 
     check_success(m_be_glsl->set_option("num_texture_spaces", "1") == 0);
 
-#ifdef USE_SSBO
-    // SSBO requires GLSL 4.30
-    check_success(m_be_glsl->set_option("glsl_version", "430") == 0);
-#else
-    check_success(m_be_glsl->set_option("glsl_version", "330") == 0);
-#endif
+    if (use_ssbo()) {
+        // SSBO requires GLSL 4.30
+        check_success(m_be_glsl->set_option("glsl_version", "430") == 0);
+    }
+    else {
+        check_success(m_be_glsl->set_option("glsl_version", "330") == 0);
+    }
 
     // Specify the implementation modes for some state functions.
     // Note that "geometry_normal", "normal" and "position" default to "field" mode.
@@ -867,13 +878,14 @@ void Material_compiler::init(
     check_success(m_be_glsl->set_option("glsl_state_texture_tangent_u_mode", "field") == 0);
     check_success(m_be_glsl->set_option("glsl_state_texture_tangent_v_mode", "field") == 0);
 
-#ifdef USE_SSBO
-    check_success(m_be_glsl->set_option("glsl_max_const_data", "0") == 0);
-    check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "on") == 0);
-#else
-    check_success(m_be_glsl->set_option("glsl_max_const_data", "1024") == 0);
-    check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "off") == 0);
-#endif
+    if (use_ssbo()) {
+        check_success(m_be_glsl->set_option("glsl_max_const_data", "0") == 0);
+        check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "on") == 0);
+    }
+    else {
+        check_success(m_be_glsl->set_option("glsl_max_const_data", "1024") == 0);
+        check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "off") == 0);
+    }
 
 #ifdef REMAP_NOISE_FUNCTIONS
     // remap noise functions that access the constant tables
