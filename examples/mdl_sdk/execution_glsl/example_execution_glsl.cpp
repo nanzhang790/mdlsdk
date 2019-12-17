@@ -344,11 +344,13 @@ private:
 // Free all acquired resources.
 Material_opengl_context::~Material_opengl_context()
 {
-    if (m_buffer_objects.size() > 0)
-        glDeleteBuffers(GLsizei(m_buffer_objects.size()), &m_buffer_objects[0]);
+    if (m_buffer_objects.size() > 0) {
+        //glDeleteBuffers(GLsizei(m_buffer_objects.size()), &m_buffer_objects[0]);
+    }
 
-    if (m_texture_objects.size() > 0)
-        glDeleteTextures(GLsizei(m_texture_objects.size()), &m_texture_objects[0]);
+    if (m_texture_objects.size() > 0) {
+        //glDeleteTextures(GLsizei(m_texture_objects.size()), &m_texture_objects[0]);
+    }
 
     check_gl_success();
 }
@@ -589,10 +591,10 @@ bool Material_opengl_context::prepare_material_data(
     set_mdl_readonly_data(target_code);
 
     // Handle the textures if there are more than just the invalid texture
-    size_t cur_tex_offs = m_texture_objects.size();
+    const size_t cur_tex_offs = m_texture_objects.size();
     m_material_texture_starts.push_back(GLuint(cur_tex_offs));
 
-    mi::Size num_textures = target_code->get_texture_count();
+    const mi::Size num_textures = target_code->get_texture_count();
     if (num_textures > 1) {
         m_texture_objects.insert(m_texture_objects.end(), num_textures - 1, 0);
 
@@ -690,7 +692,15 @@ class Material_compiler {
 
 public: 
     // Constructor.
-    Material_compiler(
+    Material_compiler()
+        : m_mdl_compiler(nullptr)
+        , m_be_glsl(nullptr)
+        , m_transaction(nullptr)
+        , m_context(nullptr)
+        , m_link_unit()
+    {}
+
+    void init(
         mi::neuraylib::IMdl_compiler* mdl_compiler,
         mi::neuraylib::IMdl_factory* mdl_factory,
         mi::neuraylib::ITransaction* transaction);
@@ -830,16 +840,16 @@ bool Material_compiler::add_material_subexpr(
 }
 
 // Constructor.
-Material_compiler::Material_compiler(
+void Material_compiler::init(
     mi::neuraylib::IMdl_compiler* mdl_compiler,
     mi::neuraylib::IMdl_factory* mdl_factory,
     mi::neuraylib::ITransaction* transaction)
-    : m_mdl_compiler(mi::base::make_handle_dup(mdl_compiler))
-    , m_be_glsl(mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL))
-    , m_transaction(mi::base::make_handle_dup(transaction))
-    , m_context(mdl_factory->create_execution_context())
-    , m_link_unit()
 {
+    m_mdl_compiler = (mi::base::make_handle_dup(mdl_compiler));
+    m_be_glsl = (mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL));
+    m_transaction = (mi::base::make_handle_dup(transaction));
+    m_context = (mdl_factory->create_execution_context());
+
     check_success(m_be_glsl->set_option("num_texture_spaces", "1") == 0);
 
 #ifdef USE_SSBO
@@ -1075,8 +1085,8 @@ static void parse(int argc, char **argv, Options &options)
     }
 }
 
-static void do_work(GLFWwindow *window,
-    mi::base::Handle<mi::neuraylib::INeuray> neuray, 
+static GLuint setup_material(GLFWwindow *window,
+    mi::base::Handle<mi::neuraylib::INeuray> neuray,
     const Options &options)
 {
     // Create a transaction
@@ -1086,17 +1096,19 @@ static void do_work(GLFWwindow *window,
         transaction = mi::base::Handle<mi::neuraylib::ITransaction>(scope->create_transaction());
     }
 
-    // Access MDL factory
-    mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
-        neuray->get_api_component<mi::neuraylib::IMdl_factory>());
-
-    // Create a material compiler 
-    mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
-        neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
-
     // Access the MDL SDK compiler component
-    Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get());
+    Material_compiler mc;
     {
+        // Access MDL factory
+        mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
+            neuray->get_api_component<mi::neuraylib::IMdl_factory>());
+
+        // Create a material compiler 
+        mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
+            neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
+
+        mc.init(mdl_compiler.get(), mdl_factory.get(), transaction.get());
+
         // Add material sub-expressions of different materials to the link unit.
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
             // this uses a lot of constant data
@@ -1117,13 +1129,12 @@ static void do_work(GLFWwindow *window,
 #endif
     }
 
-    {
-        // Generate the GLSL code for the link unit.
-        mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
+    // Generate the GLSL code for the link unit.
+    mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
 
-        // Create shader program
-        const GLuint program = create_shader_program(target_code);
-
+    // Create shader program
+    const GLuint program = create_shader_program(target_code);
+    if (program) {
         // Acquire image API needed to prepare the textures
         mi::base::Handle<mi::neuraylib::IImage_api> image_api(neuray->get_api_component<mi::neuraylib::IImage_api>());
 
@@ -1131,13 +1142,20 @@ static void do_work(GLFWwindow *window,
         Material_opengl_context material_opengl_context(program);
         check_success(material_opengl_context.prepare_material_data(transaction, image_api, target_code));
         check_success(material_opengl_context.set_material_data());
-
-        show_and_animate_scene(window, program, options);
-
-        glDeleteProgram(program);
+        transaction->commit();
     }
 
-    transaction->commit();
+    return program;
+}
+
+
+static void do_work(GLFWwindow *window,
+    mi::base::Handle<mi::neuraylib::INeuray> neuray, 
+    const Options &options)
+{
+    const GLuint program = setup_material(window, neuray, options);
+    show_and_animate_scene(window, program, options);
+    glDeleteProgram(program);
 }
 
 //------------------------------------------------------------------------------
