@@ -946,7 +946,7 @@ void handle_framebuffer_size(GLFWwindow* /*window*/, int width, int height)
 }
 
 // Initializes OpenGL, creates the shader program and the scene and executes the animation loop.
-void show_and_animate_scene(GLFWwindow *window, GLuint program, const Options &options)
+static void show_and_animate_scene(GLFWwindow *window, GLuint program, const Options &options)
 {
     // Create scene data
     GLuint quad_vertex_buffer = 0;
@@ -1096,41 +1096,43 @@ static GLuint setup_material(GLFWwindow *window,
         transaction = mi::base::Handle<mi::neuraylib::ITransaction>(scope->create_transaction());
     }
 
-    // Access the MDL SDK compiler component
-    Material_compiler mc;
-    {
-        // Access MDL factory
-        mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
-            neuray->get_api_component<mi::neuraylib::IMdl_factory>());
+    // Generate the GLSL code for the link unit.
+    mi::base::Handle<const mi::neuraylib::ITarget_code> target_code; {
+        // Access the MDL SDK compiler component
+        Material_compiler mc;
+        {
+            // Access MDL factory
+            mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
+                neuray->get_api_component<mi::neuraylib::IMdl_factory>());
 
-        // Create a material compiler 
-        mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
-            neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
+            // Create a material compiler 
+            mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
+                neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
 
-        mc.init(mdl_compiler.get(), mdl_factory.get(), transaction.get());
+            mc.init(mdl_compiler.get(), mdl_factory.get(), transaction.get());
 
-        // Add material sub-expressions of different materials to the link unit.
+            // Add material sub-expressions of different materials to the link unit.
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
             // this uses a lot of constant data
-        mc.add_material_subexpr(
-            "::nvidia::sdk_examples::tutorials::example_execution1",
-            "surface.scattering.tint", "tint");
+            mc.add_material_subexpr(
+                "::nvidia::sdk_examples::tutorials::example_execution1",
+                "surface.scattering.tint", "tint");
 #endif
 
-        mc.add_material_subexpr(
-            "::nvidia::sdk_examples::tutorials::example_execution2",
-            "surface.scattering.tint", "tint_2");
+            mc.add_material_subexpr(
+                "::nvidia::sdk_examples::tutorials::example_execution2",
+                "surface.scattering.tint", "tint_2");
 
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
-        // this uses a lot of constant data
-        mc.add_material_subexpr(
-            "::nvidia::sdk_examples::tutorials::example_execution3",
-            "surface.scattering.tint", "tint_3");
+            // this uses a lot of constant data
+            mc.add_material_subexpr(
+                "::nvidia::sdk_examples::tutorials::example_execution3",
+                "surface.scattering.tint", "tint_3");
 #endif
-    }
+        }
 
-    // Generate the GLSL code for the link unit.
-    mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
+        target_code = (mc.generate_glsl());
+    }
 
     // Create shader program
     const GLuint program = create_shader_program(target_code);
@@ -1142,8 +1144,9 @@ static GLuint setup_material(GLFWwindow *window,
         Material_opengl_context material_opengl_context(program);
         check_success(material_opengl_context.prepare_material_data(transaction, image_api, target_code));
         check_success(material_opengl_context.set_material_data());
-        transaction->commit();
     }
+
+    transaction->commit();
 
     return program;
 }
@@ -1153,8 +1156,10 @@ static void do_work(GLFWwindow *window,
     mi::base::Handle<mi::neuraylib::INeuray> neuray, 
     const Options &options)
 {
-    const GLuint program = setup_material(window, neuray, options);
-    show_and_animate_scene(window, program, options);
+    const GLuint program = setup_material(window, neuray, options); 
+    {
+        show_and_animate_scene(window, program, options);
+    }
     glDeleteProgram(program);
 }
 
@@ -1166,29 +1171,28 @@ static void do_work(GLFWwindow *window,
 
 int main(int argc, char* argv[])
 {
-    // Parse command line options
-    Options options;
-    parse(argc, argv, options);
-
     // Access the MDL SDK
-    auto han = load_and_get_ineuray();
-    mi::base::Handle<mi::neuraylib::INeuray> neuray(han);
+    mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
     check_success(neuray.is_valid_interface());
 
     // Configure the MDL SDK
     configure(neuray.get());
 
     // Start the MDL SDK
-    mi::Sint32 result = neuray->start();
-    check_start_success(result);
+    mi::Sint32 result = neuray->start(); {
+        check_start_success(result);
 
-    // Init OpenGL window
-    GLFWwindow *window = init_opengl(options); {
-        do_work(window, neuray, options);
+        // Init OpenGL window
+        GLFWwindow *window = nullptr; {
+            // Parse command line options
+            Options options;
+            parse(argc, argv, options);
+            window = init_opengl(options);
+            do_work(window, neuray, options);
+        }
+        glfwDestroyWindow(window);
+        glfwTerminate();
     }
-    glfwDestroyWindow(window);
-    glfwTerminate();
-
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
     neuray = nullptr;
