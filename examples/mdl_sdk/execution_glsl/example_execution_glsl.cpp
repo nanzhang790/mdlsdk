@@ -936,30 +936,14 @@ void handle_framebuffer_size(GLFWwindow* /*window*/, int width, int height)
 }
 
 // Initializes OpenGL, creates the shader program and the scene and executes the animation loop.
-void show_and_animate_scene(
-    mi::base::Handle<mi::neuraylib::ITransaction>        transaction,
-    mi::base::Handle<mi::neuraylib::IMdl_compiler>       mdl_compiler,
-    mi::base::Handle<mi::neuraylib::IImage_api>          image_api,
-    mi::base::Handle<const mi::neuraylib::ITarget_code>  target_code,
-    Options const                                       &options)
+void show_and_animate_scene(GLFWwindow *window, GLuint program, const Options &options)
 {
-    // Init OpenGL window
-    GLFWwindow *window = init_opengl(options);
-
-    // Create shader program
-    const GLuint program = create_shader_program(target_code);
-
     // Create scene data
     GLuint quad_vertex_buffer = 0;
     const GLuint quad_vao = create_quad(program, &quad_vertex_buffer);
 
     // Scope for material context resources
     {
-        // Prepare the needed material data of all target codes for the fragment shader
-        Material_opengl_context material_opengl_context(program);
-        check_success(material_opengl_context.prepare_material_data(transaction, image_api, target_code));
-        check_success(material_opengl_context.set_material_data());
-
         // Get locations of uniform parameters for fragment shader
         const GLint material_pattern_index = glGetUniformLocation(program, "material_pattern");
         const GLint animation_time_index = glGetUniformLocation(program, "animation_time");
@@ -1022,13 +1006,11 @@ void show_and_animate_scene(
             check_gl_success();
 
             // Create a canvas (with only one tile) and copy the result image to it
-            mi::base::Handle<mi::neuraylib::ICanvas> canvas(
-                image_api->create_canvas("Rgba", options.res_x, options.res_y));
-            mi::base::Handle<mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
-            glReadPixels(0, 0, options.res_x, options.res_y, GL_RGBA, GL_UNSIGNED_BYTE, tile->get_data());
-
+            //mi::base::Handle<mi::neuraylib::ICanvas> canvas(image_api->create_canvas("Rgba", options.res_x, options.res_y));
+            //mi::base::Handle<mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
+            //glReadPixels(0, 0, options.res_x, options.res_y, GL_RGBA, GL_UNSIGNED_BYTE, tile->get_data());
             // Save the image to disk
-            mdl_compiler->export_canvas(options.outputfile.c_str(), canvas.get());
+            //mdl_compiler->export_canvas(options.outputfile.c_str(), canvas.get());
 
             // Cleanup frame buffer
             glDeleteRenderbuffers(1, &color_buffer);
@@ -1040,10 +1022,7 @@ void show_and_animate_scene(
     // Cleanup OpenGL
     glDeleteVertexArrays(1, &quad_vao);
     glDeleteBuffers(1, &quad_vertex_buffer);
-    glDeleteProgram(program);
     check_gl_success();
-    glfwDestroyWindow(window);
-    glfwTerminate();
 }
 
 
@@ -1096,7 +1075,9 @@ static void parse(int argc, char **argv, Options &options)
     }
 }
 
-static void do_work(mi::base::Handle<mi::neuraylib::INeuray> neuray, const Options &options)
+static void do_work(GLFWwindow *window,
+    mi::base::Handle<mi::neuraylib::INeuray> neuray, 
+    const Options &options)
 {
     // Create a transaction
     mi::base::Handle<mi::neuraylib::ITransaction> transaction; {
@@ -1135,16 +1116,27 @@ static void do_work(mi::base::Handle<mi::neuraylib::INeuray> neuray, const Optio
             "surface.scattering.tint", "tint_3");
 #endif
     }
+
     {
         // Generate the GLSL code for the link unit.
         mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
 
-        // Acquire image API needed to prepare the textures
-        mi::base::Handle<mi::neuraylib::IImage_api> image_api(
-            neuray->get_api_component<mi::neuraylib::IImage_api>());
+        // Create shader program
+        const GLuint program = create_shader_program(target_code);
 
-        show_and_animate_scene(transaction, mdl_compiler, image_api, target_code, options);
+        // Acquire image API needed to prepare the textures
+        mi::base::Handle<mi::neuraylib::IImage_api> image_api(neuray->get_api_component<mi::neuraylib::IImage_api>());
+
+        // Prepare the needed material data of all target codes for the fragment shader
+        Material_opengl_context material_opengl_context(program);
+        check_success(material_opengl_context.prepare_material_data(transaction, image_api, target_code));
+        check_success(material_opengl_context.set_material_data());
+
+        show_and_animate_scene(window, program, options);
+
+        glDeleteProgram(program);
     }
+
     transaction->commit();
 }
 
@@ -1172,7 +1164,12 @@ int main(int argc, char* argv[])
     mi::Sint32 result = neuray->start();
     check_start_success(result);
 
-    do_work(neuray, options);
+    // Init OpenGL window
+    GLFWwindow *window = init_opengl(options); {
+        do_work(window, neuray, options);
+    }
+    glfwDestroyWindow(window);
+    glfwTerminate();
 
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
