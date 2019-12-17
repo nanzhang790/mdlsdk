@@ -152,7 +152,7 @@ inline void check_start_success( mi::Sint32 result)
 // freeimage plugin.
 //
 // \param neuray    pointer to the main MDL SDK interface
-inline void configure(mi::neuraylib::INeuray* neuray)
+inline void configure(mi::neuraylib::INeuray* neuray, const char *filename_nv_freeimage=nullptr)
 {
     mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
         neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
@@ -161,8 +161,11 @@ inline void configure(mi::neuraylib::INeuray* neuray)
     const std::string mdl_root = get_samples_mdl_root();
     check_success(mdl_compiler->add_module_path(mdl_root.c_str()) == 0);
 
-    // Load the FreeImage plugin.
-    check_success(mdl_compiler->load_plugin_library("nv_freeimage" MI_BASE_DLL_FILE_EXT) == 0);
+    // Load the FreeImage plugin.    
+    if (nullptr == filename_nv_freeimage) {
+        filename_nv_freeimage = "nv_freeimage" MI_BASE_DLL_FILE_EXT;
+    }
+    check_success(mdl_compiler->load_plugin_library(filename_nv_freeimage) == 0);
 }
 
 // Returns a string-representation of the given message severity
