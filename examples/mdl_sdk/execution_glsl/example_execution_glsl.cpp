@@ -943,8 +943,6 @@ void show_and_animate_scene(
     mi::base::Handle<const mi::neuraylib::ITarget_code>  target_code,
     Options const                                       &options)
 {
-    Window_context window_context = { options.material_pattern };
-
     // Init OpenGL window
     GLFWwindow *window = init_opengl(options);
 
@@ -965,6 +963,7 @@ void show_and_animate_scene(
         // Get locations of uniform parameters for fragment shader
         const GLint material_pattern_index = glGetUniformLocation(program, "material_pattern");
         const GLint animation_time_index = glGetUniformLocation(program, "animation_time");
+        Window_context window_context = { options.material_pattern };
 
         if (!options.no_window) {
             GLfloat animation_time = 0;
@@ -1097,6 +1096,58 @@ static void parse(int argc, char **argv, Options &options)
     }
 }
 
+static void do_work(mi::base::Handle<mi::neuraylib::INeuray> neuray, const Options &options)
+{
+    // Create a transaction
+    mi::base::Handle<mi::neuraylib::ITransaction> transaction; {
+        mi::base::Handle<mi::neuraylib::IDatabase> database(neuray->get_api_component<mi::neuraylib::IDatabase>());
+        mi::base::Handle<mi::neuraylib::IScope> scope(database->get_global_scope());
+        transaction = mi::base::Handle<mi::neuraylib::ITransaction>(scope->create_transaction());
+    }
+
+    // Access MDL factory
+    mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
+        neuray->get_api_component<mi::neuraylib::IMdl_factory>());
+
+    // Create a material compiler 
+    mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
+        neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
+
+    // Access the MDL SDK compiler component
+    Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get());
+    {
+        // Add material sub-expressions of different materials to the link unit.
+#if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
+            // this uses a lot of constant data
+        mc.add_material_subexpr(
+            "::nvidia::sdk_examples::tutorials::example_execution1",
+            "surface.scattering.tint", "tint");
+#endif
+
+        mc.add_material_subexpr(
+            "::nvidia::sdk_examples::tutorials::example_execution2",
+            "surface.scattering.tint", "tint_2");
+
+#if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
+        // this uses a lot of constant data
+        mc.add_material_subexpr(
+            "::nvidia::sdk_examples::tutorials::example_execution3",
+            "surface.scattering.tint", "tint_3");
+#endif
+    }
+    {
+        // Generate the GLSL code for the link unit.
+        mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
+
+        // Acquire image API needed to prepare the textures
+        mi::base::Handle<mi::neuraylib::IImage_api> image_api(
+            neuray->get_api_component<mi::neuraylib::IImage_api>());
+
+        show_and_animate_scene(transaction, mdl_compiler, image_api, target_code, options);
+    }
+    transaction->commit();
+}
+
 //------------------------------------------------------------------------------
 //
 // Main function
@@ -1121,54 +1172,7 @@ int main(int argc, char* argv[])
     mi::Sint32 result = neuray->start();
     check_start_success(result);
 
-    {
-        // Create a transaction
-        mi::base::Handle<mi::neuraylib::IDatabase> database(
-            neuray->get_api_component<mi::neuraylib::IDatabase>());
-        mi::base::Handle<mi::neuraylib::IScope> scope(database->get_global_scope());
-        mi::base::Handle<mi::neuraylib::ITransaction> transaction(scope->create_transaction());
-
-        // Access MDL factory
-        mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
-        neuray->get_api_component<mi::neuraylib::IMdl_factory>());
-
-        // Create a material compiler 
-        mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
-            neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
-
-        // Access the MDL SDK compiler component
-        Material_compiler mc(mdl_compiler.get(), mdl_factory.get(), transaction.get()); 
-        {
-            // Add material sub-expressions of different materials to the link unit.
-#if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
-            // this uses a lot of constant data
-            mc.add_material_subexpr(
-                    "::nvidia::sdk_examples::tutorials::example_execution1",
-                    "surface.scattering.tint", "tint");
-#endif
-
-            mc.add_material_subexpr(
-                    "::nvidia::sdk_examples::tutorials::example_execution2",
-                    "surface.scattering.tint", "tint_2");
-
-#if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
-            // this uses a lot of constant data
-            mc.add_material_subexpr(
-                    "::nvidia::sdk_examples::tutorials::example_execution3",
-                    "surface.scattering.tint", "tint_3");
-#endif
-
-            // Generate the GLSL code for the link unit.
-            mi::base::Handle<const mi::neuraylib::ITarget_code> target_code(mc.generate_glsl());
-
-            // Acquire image API needed to prepare the textures
-            mi::base::Handle<mi::neuraylib::IImage_api> image_api(
-                neuray->get_api_component<mi::neuraylib::IImage_api>());
-
-            show_and_animate_scene(transaction, mdl_compiler, image_api, target_code, options);
-        }
-        transaction->commit();
-    }
+    do_work(neuray, options);
 
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
