@@ -1184,11 +1184,14 @@ static void do_work(GLFWwindow *window,
 int main(int argc, char* argv[])
 {
     // Access the MDL SDK
-    mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
-    check_success(neuray.is_valid_interface());
-
-    // Configure the MDL SDK
-    configure(neuray.get());
+    static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
+    if (neuray == nullptr) {
+        //mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
+        neuray = load_and_get_ineuray();
+        check_success(neuray.is_valid_interface());
+        // Configure the MDL SDK
+        configure(neuray.get());
+    }
 
     // Start the MDL SDK
     mi::Sint32 result = neuray->start(); {
