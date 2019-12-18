@@ -21,6 +21,9 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+
+namespace{
+
 // This selects SSBO (Shader Storage Buffer Objects) mode for passing uniforms and MDL const data.
 // Should not be disabled unless you only use materials with very small const data.
 // In this example, this would only apply to execution_material_2, because the others are using
@@ -61,17 +64,17 @@ char const* fragment_shader_filename = "example_execution_glsl.frag";
 
 // Command line options structure.
 struct Options {
+    // The pattern number representing the combination of materials to display.
+    unsigned int material_pattern;
+
+    // The resolution of the display / image.
+    unsigned int res_x, res_y;
+
     // If true, no interactive display will be used.
     bool no_window;
 
     // An result output file name for non-interactive mode.
     std::string outputfile;
-
-    // The pattern number representing the combination of materials to display.
-    unsigned material_pattern;
-
-    // The resolution of the display / image.
-    unsigned res_x, res_y;
 
     // The constructor.
     Options()
@@ -89,6 +92,58 @@ struct Vertex {
     mi::Float32_3_struct position;
     mi::Float32_2_struct tex_coord;
 };
+
+// Context structure for window callback functions.
+struct Window_context
+{
+    // A number from 1 to 7 specifying the material pattern to display.
+    unsigned material_pattern;
+};
+
+Window_context window_context = { 0 };
+
+
+// GLFW callback handler for keyboard inputs.
+static void handle_key(GLFWwindow *window, int key, int /*scancode*/, int action, int /*mods*/)
+{
+    // Handle key press events
+    if (action == GLFW_PRESS) {
+        // Map keypad numbers to normal numbers
+        if (GLFW_KEY_KP_0 <= key && key <= GLFW_KEY_KP_9) {
+            key += GLFW_KEY_0 - GLFW_KEY_KP_0;
+        }
+
+        switch (key) {
+        // Escape closes the window
+        case GLFW_KEY_ESCAPE:
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            break;
+
+        // Numbers 1 - 7 select the different material patterns
+        case GLFW_KEY_1:
+        case GLFW_KEY_2:
+        case GLFW_KEY_3:
+        case GLFW_KEY_4:
+        case GLFW_KEY_5:
+        case GLFW_KEY_6:
+        case GLFW_KEY_7:
+        {
+            auto ctx = (Window_context*)glfwGetWindowUserPointer(window);
+            ctx->material_pattern = key - GLFW_KEY_0;
+            break;
+        }
+
+        default:
+            break;
+        }
+    }
+}
+
+// GLFW callback handler for framebuffer resize events (when window size or resolution changes).
+void handle_framebuffer_size(GLFWwindow* /*window*/, int width, int height)
+{
+    glViewport(0, 0, width, height);
+}
 
 //------------------------------------------------------------------------------
 //
@@ -120,26 +175,31 @@ static GLFWwindow *init_opengl(Options const &options)
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     // Create an OpenGL window and a context
-    GLFWwindow *window = glfwCreateWindow(
-        options.res_x, options.res_y,
+    GLFWwindow *window = glfwCreateWindow(options.res_x, options.res_y,
         "MDL SDK GLSL Execution Example - Switch pattern with keys 1 - 7", nullptr, nullptr);
     if (!window) {
         std::cerr << "Error creating OpenGL window!" << std::endl;
         terminate();
     }
 
+    // Enable VSync
+    glfwSwapInterval(1);
+
+    // Callbacks
+    window_context.material_pattern = options.material_pattern;
+    glfwSetWindowUserPointer(window, &window_context);
+    glfwSetKeyCallback(window, handle_key);
+    glfwSetFramebufferSizeCallback(window, handle_framebuffer_size);
+
     // Attach context to window
     glfwMakeContextCurrent(window);
 
     // Initialize GLEW to get OpenGL extensions
-    GLenum res = glewInit();
+    const GLenum res = glewInit();
     if (res != GLEW_OK) {
         std::cerr << "GLEW error: " << glewGetErrorString(res) << std::endl;
         terminate();
     }
-
-    // Enable VSync
-    glfwSwapInterval(1);
 
     check_gl_success();
 
@@ -295,7 +355,6 @@ static GLuint create_quad(GLuint program, GLuint* vertex_buffer)
 
     return vertex_array;
 }
-
 
 //------------------------------------------------------------------------------
 //
@@ -908,137 +967,29 @@ void Material_compiler::init(
 //
 //------------------------------------------------------------------------------
 
-// Context structure for window callback functions.
-struct Window_context
-{
-    // A number from 1 to 7 specifying the material pattern to display.
-    unsigned material_pattern;
-};
-
-// GLFW callback handler for keyboard inputs.
-void handle_key(GLFWwindow *window, int key, int /*scancode*/, int action, int /*mods*/)
-{
-    // Handle key press events
-    if (action == GLFW_PRESS) {
-        // Map keypad numbers to normal numbers
-        if (GLFW_KEY_KP_0 <= key && key <= GLFW_KEY_KP_9) {
-            key += GLFW_KEY_0 - GLFW_KEY_KP_0;
-        }
-
-        switch (key) {
-            // Escape closes the window
-            case GLFW_KEY_ESCAPE:
-                glfwSetWindowShouldClose(window, GLFW_TRUE);
-                break;
-
-            // Numbers 1 - 7 select the different material patterns
-            case GLFW_KEY_1:
-            case GLFW_KEY_2:
-            case GLFW_KEY_3:
-            case GLFW_KEY_4:
-            case GLFW_KEY_5:
-            case GLFW_KEY_6:
-            case GLFW_KEY_7:
-            {
-                auto ctx = (Window_context*)glfwGetWindowUserPointer(window);
-                ctx->material_pattern = key - GLFW_KEY_0;
-                break;
-            }
-
-            default:
-                break;
-        }
-    }
-}
-
-// GLFW callback handler for framebuffer resize events (when window size or resolution changes).
-void handle_framebuffer_size(GLFWwindow* /*window*/, int width, int height)
-{
-    glViewport(0, 0, width, height);
-}
-
 // Initializes OpenGL, creates the shader program and the scene and executes the animation loop.
-static void show_and_animate_scene(GLFWwindow *window, GLuint program, const Options &options)
-{
+static void show_and_animate_scene(GLFWwindow *window, GLuint program, Window_context &window_context)
+{    
     // Create scene data
     GLuint quad_vertex_buffer = 0;
     const GLuint quad_vao = create_quad(program, &quad_vertex_buffer);
 
-    // Scope for material context resources
+    // Loop until the user closes the window
+    while (!glfwWindowShouldClose(window))
     {
-        // Get locations of uniform parameters for fragment shader
+        // Set uniform frame parameters
         const GLint material_pattern_index = glGetUniformLocation(program, "material_pattern");
         const GLint animation_time_index = glGetUniformLocation(program, "animation_time");
-        Window_context window_context = { options.material_pattern };
+        glUniform1ui(material_pattern_index, window_context.material_pattern);
+        glUniform1f(animation_time_index, glfwGetTime());
 
-        if (!options.no_window) {
-            GLfloat animation_time = 0;
-            double last_frame_time = glfwGetTime();
+        // Render the scene
+        glBindVertexArray(quad_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glfwSwapBuffers(window);
 
-            glfwSetWindowUserPointer(window, &window_context);
-            glfwSetKeyCallback(window, handle_key);
-            glfwSetFramebufferSizeCallback(window, handle_framebuffer_size);
-
-            // Loop until the user closes the window
-            while (!glfwWindowShouldClose(window))
-            {
-                // Update animation time
-                const double cur_frame_time = glfwGetTime();
-                animation_time += GLfloat(cur_frame_time - last_frame_time);
-                last_frame_time = cur_frame_time;
-
-                // Set uniform frame parameters
-                glUniform1ui(material_pattern_index, window_context.material_pattern);
-                glUniform1f(animation_time_index, animation_time);
-
-                // Render the scene
-                glClear(GL_COLOR_BUFFER_BIT);
-                glBindVertexArray(quad_vao);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                // Swap front and back buffers
-                glfwSwapBuffers(window);
-
-                // Poll for events and process them
-                glfwPollEvents();
-            }
-        } 
-        else {  // no_window
-            // Set up frame buffer
-            GLuint frame_buffer = 0, color_buffer = 0;
-            glGenFramebuffers(1, &frame_buffer);
-            glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer);
-            glGenRenderbuffers(1, &color_buffer);
-            glBindRenderbuffer(GL_RENDERBUFFER, color_buffer);
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, options.res_x, options.res_y);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color_buffer);
-            check_gl_success();
-
-            // Set uniform frame parameters
-            glUniform1ui(material_pattern_index, window_context.material_pattern);
-            glUniform1f(animation_time_index, 0.f);
-
-            // Render the scene
-            glClear(GL_COLOR_BUFFER_BIT);
-            glViewport(0, 0, options.res_x, options.res_y);
-            check_gl_success();
-            glBindVertexArray(quad_vao);
-            check_gl_success();
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            check_gl_success();
-
-            // Create a canvas (with only one tile) and copy the result image to it
-            //mi::base::Handle<mi::neuraylib::ICanvas> canvas(image_api->create_canvas("Rgba", options.res_x, options.res_y));
-            //mi::base::Handle<mi::neuraylib::ITile> tile(canvas->get_tile(0, 0));
-            //glReadPixels(0, 0, options.res_x, options.res_y, GL_RGBA, GL_UNSIGNED_BYTE, tile->get_data());
-            // Save the image to disk
-            //mdl_compiler->export_canvas(options.outputfile.c_str(), canvas.get());
-
-            // Cleanup frame buffer
-            glDeleteRenderbuffers(1, &color_buffer);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDeleteFramebuffers(1, &frame_buffer);
-        }
+        // Poll for events and process them
+        glfwPollEvents();
     }
 
     // Cleanup OpenGL
@@ -1097,7 +1048,7 @@ static void parse(int argc, char **argv, Options &options)
     }
 }
 
-static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray, const Options &options)
+static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray)
 {
     // Create a transaction
     mi::base::Handle<mi::neuraylib::ITransaction> transaction; {
@@ -1197,6 +1148,10 @@ void mdlsdk_stop(void)
     check_success(unload());
 }
 
+}//namespace
+
+
+
 int main(int argc, char* argv[])
 {
     mdlsdk_init();
@@ -1209,8 +1164,8 @@ int main(int argc, char* argv[])
         Options options;
         parse(argc, argv, options);
         window = init_opengl(options);
-        const GLuint program = setup_material(neuray, options);
-        show_and_animate_scene(window, program, options);
+        const GLuint program = setup_material(neuray);
+        show_and_animate_scene(window, program, window_context);
         glDeleteProgram(program);
     }
     glfwDestroyWindow(window);
