@@ -42,7 +42,7 @@
 //
 // to lut-free alternatives. When enabled, you can avoid to set the USE_SSBO define for this 
 // example.
-//#define REMAP_NOISE_FUNCTIONS
+#define REMAP_NOISE_FUNCTIONS
 
 inline bool use_ssbo() {
 #if defined(USE_SSBO)
@@ -342,12 +342,13 @@ private:
     // The OpenGL program to prepare.
     GLuint m_program;
 
+    GLuint m_next_storage_block_binding;
+
     std::vector<GLuint> m_texture_objects;
 
     std::vector<unsigned int> m_material_texture_starts;
 
     std::vector<GLuint> m_buffer_objects;
-    GLuint m_next_storage_block_binding;
 };
 
 // Free all acquired resources.
@@ -371,7 +372,7 @@ void Material_opengl_context::set_mdl_readonly_data(
     mi::Size num_uniforms = target_code->get_ro_data_segment_count();
     if (num_uniforms == 0) return;
 
-    if (use_ssbo) {
+    if (use_ssbo()) {
         size_t cur_buffer_offs = m_buffer_objects.size();
         m_buffer_objects.insert(m_buffer_objects.end(), num_uniforms, 0);
 
@@ -393,8 +394,7 @@ void Material_opengl_context::set_mdl_readonly_data(
 #endif
 
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_buffer_objects[cur_buffer_offs + i]);
-            glBufferData(
-                GL_SHADER_STORAGE_BUFFER, GLsizeiptr(segment_size), segment_data, GL_STATIC_DRAW);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, GLsizeiptr(segment_size), segment_data, GL_STATIC_DRAW);
 
             GLuint block_index = glGetProgramResourceIndex(
                 m_program, GL_SHADER_STORAGE_BLOCK, target_code->get_ro_data_segment_name(i));
@@ -1097,9 +1097,7 @@ static void parse(int argc, char **argv, Options &options)
     }
 }
 
-static GLuint setup_material(GLFWwindow *window,
-    mi::base::Handle<mi::neuraylib::INeuray> neuray,
-    const Options &options)
+static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray, const Options &options)
 {
     // Create a transaction
     mi::base::Handle<mi::neuraylib::ITransaction> transaction; {
@@ -1143,7 +1141,7 @@ static GLuint setup_material(GLFWwindow *window,
 #endif
         }
 
-        target_code = (mc.generate_glsl());
+        target_code = mc.generate_glsl();
     }
 
     // Create shader program
@@ -1163,59 +1161,65 @@ static GLuint setup_material(GLFWwindow *window,
     return program;
 }
 
-
-static void do_work(GLFWwindow *window,
-    mi::base::Handle<mi::neuraylib::INeuray> neuray, 
-    const Options &options)
-{
-    const GLuint program = setup_material(window, neuray, options); 
-    {
-        show_and_animate_scene(window, program, options);
-    }
-    glDeleteProgram(program);
-}
-
 //------------------------------------------------------------------------------
 //
 // Main function
 //
 //------------------------------------------------------------------------------
+static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
 
-int main(int argc, char* argv[])
+void mdlsdk_init(void)
 {
     // Access the MDL SDK
-    static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
-    if (neuray == nullptr) {
-        //mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
-        neuray = load_and_get_ineuray();
-        check_success(neuray.is_valid_interface());
-        // Configure the MDL SDK
-        configure(neuray.get());
-    }
+    if (neuray != nullptr) return;
 
+    //mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
+    neuray = load_and_get_ineuray();
+    check_success(neuray.is_valid_interface());
+    // Configure the MDL SDK
+    configure(neuray.get());
+}
+
+void mdlsdk_start(void)
+{
     // Start the MDL SDK
-    mi::Sint32 result = neuray->start(); {
-        check_start_success(result);
+    mi::Sint32 result = neuray->start();
+    check_start_success(result);
+}
 
-        // Init OpenGL window
-        GLFWwindow *window = nullptr; {
-            // Parse command line options
-            Options options;
-            parse(argc, argv, options);
-            window = init_opengl(options);
-            do_work(window, neuray, options);
-        }
-        glfwDestroyWindow(window);
-        glfwTerminate();
-    }
+void mdlsdk_stop(void)
+{
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
     neuray = nullptr;
 
     // Unload the MDL SDK
     check_success(unload());
+}
+
+int main(int argc, char* argv[])
+{
+    mdlsdk_init();
+
+    mdlsdk_start();
+
+    // Init OpenGL window
+    GLFWwindow *window = nullptr; {
+        // Parse command line options
+        Options options;
+        parse(argc, argv, options);
+        window = init_opengl(options);
+        const GLuint program = setup_material(neuray, options);
+        show_and_animate_scene(window, program, options);
+        glDeleteProgram(program);
+    }
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    mdlsdk_stop();
 
     keep_console_open();
+
     return EXIT_SUCCESS;
 }
 

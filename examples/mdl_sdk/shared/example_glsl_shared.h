@@ -97,10 +97,12 @@ static void dump_program_info(GLuint program, const char* text)
 // Add a shader to the given program
 static void add_shader(GLenum shader_type, const std::string& source_code, GLuint program)
 {
-    const GLchar* src_buffers[1] = { source_code.c_str() };
-    GLuint shader = glCreateShader(shader_type);
-    check_success(shader);
-    glShaderSource(shader, 1, src_buffers, nullptr);
+    GLuint shader; {
+        shader = glCreateShader(shader_type);
+        check_success(shader);
+        const GLchar* src_buffers[1] = { source_code.c_str() };
+        glShaderSource(shader, 1, src_buffers, nullptr);
+    }
     glCompileShader(shader);
 
     GLint success;
