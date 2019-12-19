@@ -160,6 +160,7 @@ inline void configure(mi::neuraylib::INeuray* neuray, const char *filename_nv_fr
     // Set the module and texture search path.
     const std::string mdl_root = get_samples_mdl_root();
     check_success(mdl_compiler->add_module_path(mdl_root.c_str()) == 0);
+    check_success(mdl_compiler->add_resource_path(mdl_root.c_str()) == 0);
 
     // Load the FreeImage plugin.    
     if (nullptr == filename_nv_freeimage) {

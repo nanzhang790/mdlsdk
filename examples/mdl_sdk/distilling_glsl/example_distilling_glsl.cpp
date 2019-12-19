@@ -83,6 +83,26 @@ struct Mdl_sdk_state
     mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler;
     mi::base::Handle<mi::neuraylib::IMdl_factory>  factory;
     mi::base::Handle<mi::neuraylib::ITransaction>  transaction;
+
+    Mdl_sdk_state(mi::base::Handle<mi::neuraylib::INeuray> neuray)
+    {
+        mdl_sdk = neuray;
+        mdl_compiler = neuray->get_api_component<mi::neuraylib::IMdl_compiler>();
+        factory = neuray->get_api_component<mi::neuraylib::IMdl_factory>();
+        transaction = nullptr; {
+            // Create a transaction
+            mi::base::Handle<mi::neuraylib::IDatabase> database(
+                neuray->get_api_component<mi::neuraylib::IDatabase>());
+            mi::base::Handle<mi::neuraylib::IScope> scope(database->get_global_scope());
+            transaction = scope->create_transaction();
+        }
+    }
+
+    ~Mdl_sdk_state() {
+        transaction = nullptr;
+        factory = nullptr;
+        mdl_compiler = nullptr;
+    }
 };
 
 // Convert to floating point and transform to linear space if necessary
@@ -2397,7 +2417,7 @@ static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
 static void mdlsdk_init(void)
 {
     // Access the MDL SDK
-    if (neuray != nullptr) return;
+    if (neuray.get() != nullptr) return;
 
     //mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
     neuray = load_and_get_ineuray();
@@ -2408,7 +2428,6 @@ static void mdlsdk_init(void)
     // Start the MDL SDK
     mi::Sint32 result = neuray->start();
     check_start_success(result);
-
 }
 
 static void mdlsdk_stop(void)
@@ -2476,8 +2495,7 @@ static void parse(int argc, char **argv, Options &options)
         }
     }
     if (options.material_names.empty()) {
-        options.material_names.push_back(
-            "::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
+        options.material_names.push_back("::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
     }
 }
 
@@ -2486,57 +2504,17 @@ int main(int argc, char* argv[])
     Options options;
     parse(argc, argv, options);
 
-    // Access the MDL SDK
-    mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
-    check_success(neuray.is_valid_interface());
+    mdlsdk_init();
 
-    // Access the MDL SDK compiler component
-    mi::base::Handle<mi::neuraylib::IMdl_compiler> mdl_compiler(
-        neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
-
-    // Configure the MDL SDK
-
-    // Load plugin required for loading textures
-    check_success(mdl_compiler->load_plugin_library("nv_freeimage" MI_BASE_DLL_FILE_EXT) == 0);
-
-    const std::string root = get_samples_mdl_root();
-    // Set resource path required for image loading
-    check_success(mdl_compiler->add_resource_path(root.c_str()) == 0);
-
-    // Set MDL module paths
-    check_success(mdl_compiler->add_module_path(root.c_str()) == 0);
-    for (std::size_t i = 0; i < options.mdl_paths.size(); ++i)
-        check_success(mdl_compiler->add_module_path(options.mdl_paths[i].c_str()) == 0);
-
-    // Start the MDL SDK
-    mi::Sint32 result = neuray->start();
-    check_start_success(result);
-
-    //  Access MDL factory
-    mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
-        neuray->get_api_component<mi::neuraylib::IMdl_factory>());
-
-    {
-        Mdl_sdk_state sdk_state;
-        sdk_state.mdl_sdk = neuray;
-        sdk_state.mdl_compiler = mdl_compiler;
-        sdk_state.factory = mdl_factory;
-
-        // Create a transaction
-        mi::base::Handle<mi::neuraylib::IDatabase> database(
-            neuray->get_api_component<mi::neuraylib::IDatabase>());
-        mi::base::Handle<mi::neuraylib::IScope> scope(database->get_global_scope());
-        sdk_state.transaction = scope->create_transaction();
-
+    if (neuray.get()){
+        Mdl_sdk_state sdk_state(neuray); 
         {
-            std::vector<mi::base::Handle<const mi::neuraylib::ICompiled_material> >
-                distilled_materials;
-
+            std::vector<mi::base::Handle<const mi::neuraylib::ICompiled_material> > distilled_materials;
             for (mi::Size i = 0; i < options.material_names.size(); ++i)
             {
                 // Load and compile material
                 mi::base::Handle<mi::neuraylib::ICompiled_material> cm(
-                    compile_material(sdk_state,  options.material_names[i]));
+                    compile_material(sdk_state, options.material_names[i]));
                 check_success(cm.is_valid_interface());
 
                 // Distill to UE4 target
@@ -2546,22 +2524,12 @@ int main(int argc, char* argv[])
 
                 distilled_materials.push_back(dm);
             }
-            render_scene(
-                sdk_state, distilled_materials, options);
+            render_scene(sdk_state, distilled_materials, options);
         }
         sdk_state.transaction->commit();
     }
 
-    // Free API components before shutting down MDL SDK
-    mdl_factory = 0;
-    mdl_compiler = 0;
-
-    // Shut down the MDL SDK
-    check_success(neuray->shutdown() == 0);
-    neuray = 0;
-
-    // Unload the MDL SDK
-    check_success(unload());
+    mdlsdk_stop();
 
     keep_console_open();
     return EXIT_SUCCESS;
