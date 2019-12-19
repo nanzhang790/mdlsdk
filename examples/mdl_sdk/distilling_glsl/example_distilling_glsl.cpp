@@ -2114,10 +2114,7 @@ void render_scene(
     window_context.bake = options.bake;
     window_context.exposure = options.exposure;
 
-    float exposure_scale = static_cast<float>(pow(2.0, options.exposure));
-
     // Init OpenGL window and setup event callbacks
-
     printf("Initializing OpenGL ...\n");
     GLFWwindow *window = init_opengl(
         window_context.width, window_context.height, options.show_window);
@@ -2159,31 +2156,8 @@ void render_scene(
     glViewport(0, 0, window_context.width, window_context.height);
     {
         // Create scene data
-        std::vector<Mdl_pbr_shader*> pbr_shaders(distilled_materials.size() * 2);
-
-        std::cout << "Generating shader " << window_context.material <<
-            " in " << (window_context.bake ? "baked" : "GLSL")
-            << " mode ..." << std::endl;
-
-        int index = window_context.bake ? 0 : 1;
-
-        Mdl_ue4* mdl_ue4 = 0;
-        if (window_context.bake)
-            mdl_ue4 = new Mdl_ue4_baker(state, distilled_materials[0].get(),
-                options.baking_resolution_x, options.baking_resolution_y);
-        else
-            mdl_ue4 = new Mdl_ue4_glsl(state, distilled_materials[0].get());
-
-        Mdl_pbr_shader* sphere_shader = new Mdl_pbr_shader(
-            state, mdl_ue4,
-            iblmap_id, refmap_id, brdflutid);
-        pbr_shaders[0+index] = sphere_shader;
-
-        std::cout << "Generating shader done." << std::endl;
-
+        std::vector<Mdl_pbr_shader*> pbr_shaders(distilled_materials.size() * 2, nullptr);
         Sphere sphere(1.f, 64, 64);
-        sphere.bind_shader(sphere_shader);
-
         Shader_program env_shader(
             get_executable_folder() + "/" + "screen_aligned_quad.vert",
             get_executable_folder() + "/" + "environment_sphere.frag");
@@ -2202,115 +2176,77 @@ void render_scene(
         mi::Float32_4_4 inv_mv(mv);
         inv_mv.transpose();
 
-        mi::Float32_4_4 proj =
-            projection(
-                45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
+        mi::Float32_4_4 proj = projection(45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
         mi::Float32_4_4 inv_proj(proj);
         inv_proj.invert();
+        int first = 1;
+        float exposure_scale = 1;
 
         // Loop until the user closes the window
-        if(options.show_window)
-            while (!glfwWindowShouldClose(window))
+        while (!glfwWindowShouldClose(window)) {
+            // Render the scene            
+            const int num_materials = int(distilled_materials.size());
+            window_context.material = window_context.material % num_materials;
+            if (window_context.material < 0)
+                window_context.material += num_materials;
+            int index = window_context.bake ? 0 : 1;
+            Mdl_pbr_shader* sphere_shader = pbr_shaders[window_context.material * 2 + index];
+            if (window_context.event || first)
             {
-                // Render the scene
-
-                if (window_context.event)
+                first = 0;
+                // create, if it does not exist yet
+                if (!sphere_shader)
                 {
-                    const int num_materials = int(distilled_materials.size());
-                    window_context.material = window_context.material % num_materials;
-                    if (window_context.material < 0)
-                        window_context.material += num_materials;
+                    std::cout << "Generating shader " << window_context.material <<
+                        " in " << (index ? "GLSL" : "baked")
+                        << " mode ..." << std::endl;
 
-                    index = window_context.bake ? 0 : 1;
-                    sphere_shader = 
-                        pbr_shaders[window_context.material * 2 + index];
-                    // create, if it does not exist yet
-                    if (!sphere_shader)
-                    {
-                        std::cout << "Generating shader " << window_context.material <<
-                            " in " << (index ? "GLSL" : "baked" )
-                            << " mode ..." << std::endl;
+                    Mdl_ue4* mdl_ue4 = nullptr;
+                    if (window_context.bake)
+                        mdl_ue4 = new Mdl_ue4_baker(
+                            state, distilled_materials[window_context.material].get(),
+                            options.baking_resolution_x, options.baking_resolution_y);
+                    else
+                        mdl_ue4 = new Mdl_ue4_glsl(
+                            state, distilled_materials[window_context.material].get());
 
-                        if (window_context.bake)
-                            mdl_ue4 = new Mdl_ue4_baker(
-                                state, distilled_materials[window_context.material].get(),
-                                options.baking_resolution_x, options.baking_resolution_y);
-                        else
-                            mdl_ue4 = new Mdl_ue4_glsl(
-                                state, distilled_materials[window_context.material].get());
+                    sphere_shader = new Mdl_pbr_shader(
+                        state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
 
-                        sphere_shader = new Mdl_pbr_shader(
-                            state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
+                    pbr_shaders[window_context.material * 2 + index] = sphere_shader;
 
-                        pbr_shaders[window_context.material * 2 + index] = sphere_shader;
-
-                        std::cout << "Generating shader done." << std::endl;
-                    }
-                    sphere.bind_shader(sphere_shader);
-
-                    exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
-
-                    phi -= window_context.move_dx * 0.001 * M_PI;
-                    theta -= window_context.move_dy * 0.001 * M_PI;
-                    theta = std::max(theta, 0.05 * M_PI);
-                    theta = std::min(theta, 0.95 * M_PI);
-                    window_context.move_dx = window_context.move_dy = 0.0;
-
-                    cam_pos.x = float(sin(phi) * sin(theta));
-                    cam_pos.y = float(cos(theta));
-                    cam_pos.z = float(cos(phi) * sin(theta));
-
-                    cam_up.x = float(-sin(phi) * cos(theta));
-                    cam_up.y = float(sin(theta));
-                    cam_up.z = float(-cos(phi) * cos(theta));
-
-                    const float dist = float(cam_dist * pow(0.95, double(window_context.zoom)));
-                    cam_pos *= dist;
-                    mv.lookat(cam_pos, cam_interest, cam_up);
-                    inv_mv = mv;
-                    inv_mv.transpose();
-
-                    proj = projection(45.f,
-                        float(window_context.width) / float(window_context.height), 1.f, 100.f);
-                    inv_proj = proj;
-                    inv_proj.invert();
-
-                    window_context.event = false;
+                    std::cout << "Generating shader done." << std::endl;
                 }
+                sphere.bind_shader(sphere_shader);
 
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
+                phi -= window_context.move_dx * 0.001 * M_PI;
+                theta -= window_context.move_dy * 0.001 * M_PI;
+                theta = std::max(theta, 0.05 * M_PI);
+                theta = std::min(theta, 0.95 * M_PI);
+                window_context.move_dx = window_context.move_dy = 0.0;
 
-                env_shader.make_current();
-                env_shader.set_float("exposure_scale", exposure_scale);
-                env_shader.set_matrix("inv_mv", inv_mv);
-                env_shader.set_matrix("inv_proj", inv_proj);
+                cam_pos.x = float(sin(phi) * sin(theta));
+                cam_pos.y = float(cos(theta));
+                cam_pos.z = float(cos(phi) * sin(theta));
+                cam_up.x = float(-sin(phi) * cos(theta));
+                cam_up.y = float(sin(theta));
+                cam_up.z = float(-cos(phi) * cos(theta));
 
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, env_tex_id);
+                const float dist = float(cam_dist * pow(0.95, double(window_context.zoom)));
+                cam_pos *= dist;
+                mv.lookat(cam_pos, cam_interest, cam_up);
+                inv_mv = mv;
+                inv_mv.transpose();
 
-                quad.draw();
+                proj = projection(45.f,
+                    float(window_context.width) / float(window_context.height), 1.f, 100.f);
+                inv_proj = proj;
+                inv_proj.invert();
 
-                sphere_shader->make_current();
-                sphere_shader->set_float("exposure_scale", exposure_scale);
-                sphere_shader->set_matrix("m_view", mv);
-                sphere_shader->set_matrix("m_projection", proj);
-                sphere_shader->set_vector3("cam_position", cam_pos);
-                sphere_shader->bind_textures();
-
-                sphere.draw();
-
-                // Swap front and back buffers
-                glfwSwapBuffers(window);
-
-                // Poll for events and process them
-                glfwPollEvents();
+                window_context.event = false;
             }
-        else
-        {
-            // render to texture
-            GLuint fbo = 0, rbo = 0;
-            GLuint fb = create_offscreen_render_target(
-                window_context.width, window_context.height, fbo, rbo);
+
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             env_shader.make_current();
@@ -2331,11 +2267,12 @@ void render_scene(
             sphere_shader->bind_textures();
 
             sphere.draw();
-            
-            save_image(state, options.outputfile.c_str(), fb, 
-                window_context.width, window_context.height);
 
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            // Swap front and back buffers
+            glfwSwapBuffers(window);
+
+            // Poll for events and process them
+            glfwPollEvents();
         }
         for (mi::Size i = 0; i < pbr_shaders.size(); ++i)
             delete pbr_shaders[i];
