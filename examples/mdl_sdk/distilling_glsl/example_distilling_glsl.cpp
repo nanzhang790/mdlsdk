@@ -98,15 +98,19 @@ struct Mdl_sdk_state
         }
     }
 
-    ~Mdl_sdk_state() {
-        transaction = nullptr;
+    void free() {
+        if (transaction.get()) {
+            transaction->commit();
+        }
         factory = nullptr;
         mdl_compiler = nullptr;
+        transaction = nullptr;
     }
 };
 
 // Convert to floating point and transform to linear space if necessary
-mi::base::Handle<const mi::neuraylib::ICanvas> adjust_canvas(
+static mi::base::Handle<const mi::neuraylib::ICanvas> 
+adjust_canvas(
     mi::neuraylib::IImage_api* image_api,
     mi::base::Handle<const mi::neuraylib::ICanvas> canvas,
     mi::Float32 gamma)
@@ -139,7 +143,8 @@ mi::base::Handle<const mi::neuraylib::ICanvas> adjust_canvas(
         gamma_canvas->set_gamma(gamma);
         image_api->adjust_gamma(gamma_canvas.get(), 1.0f);
         canvas = gamma_canvas;
-    } else if (type_conversion) {
+    } 
+    else if (type_conversion) {
         // Convert to expected format.
         canvas = image_api->convert(canvas.get(), target_type);
     }
@@ -153,18 +158,13 @@ mi::base::Handle<const mi::neuraylib::ICanvas> load_image_from_file(
     mi::neuraylib::ITransaction* transaction,
     const char* filename)
 {
-    mi::base::Handle<const mi::neuraylib::ICanvas> result;
-
-    mi::base::Handle<mi::neuraylib::IImage> image(
-        transaction->create<mi::neuraylib::IImage>("Image"));
+    mi::base::Handle<const mi::neuraylib::ICanvas> result(nullptr);
+    mi::base::Handle<mi::neuraylib::IImage> image(transaction->create<mi::neuraylib::IImage>("Image"));
     if (image->reset_file(filename) == 0)
     {
         // poor man's gamma guess
-        mi::Float32 gamma = 1.0f;
         std::string t = image->get_type();
-        if (t == "Rgb" || t == "Rgba")
-            gamma = 2.2f;
-
+        const mi::Float32 gamma = (t == "Rgb" || t == "Rgba") ? 2.2f : 1;
         result = adjust_canvas(image_api, mi::base::make_handle(image->get_canvas()), gamma);
     }
     return result;
@@ -2355,7 +2355,7 @@ void render_scene(
 const mi::neuraylib::ICompiled_material* distill_material(
     const Mdl_sdk_state& state,
     const std::string& target_model,
-    mi::neuraylib::ICompiled_material* cm)
+    const mi::neuraylib::ICompiled_material* cm)
 {
     mi::base::Handle<mi::neuraylib::IMdl_distiller_api> distiller_api(
         state.mdl_sdk->get_api_component<mi::neuraylib::IMdl_distiller_api>());
@@ -2375,40 +2375,37 @@ mi::neuraylib::ICompiled_material* compile_material(
     mi::base::Handle<mi::neuraylib::IMdl_execution_context> context(
         state.factory->create_execution_context());
 
-    // Load the module
-   mi::Sint32 result = state.mdl_compiler->load_module(
-       state.transaction.get(), get_module_name(material_name).c_str(), context.get());
-   if (result < 0)
-       return nullptr;
-   if (!print_messages(context.get()))
-       return nullptr;
+    mi::base::Handle<const mi::neuraylib::IMaterial_definition> mat_def(nullptr); {
+        // Load the module
+        mi::Sint32 result = state.mdl_compiler->load_module(
+            state.transaction.get(), get_module_name(material_name).c_str(), context.get());
+        if (result < 0 || !print_messages(context.get()))
+            return nullptr;
 
-   // Access material definition
-   const char *prefix = (material_name.find("::") == 0) ? "mdl" : "mdl::";
-   std::string mat_def_name = prefix + material_name;
+        // Access material definition
+        const char *prefix = (material_name.find("::") == 0) ? "mdl" : "mdl::";
+        std::string mat_def_name = prefix + material_name;
+        mat_def = state.transaction->access<const mi::neuraylib::IMaterial_definition>(mat_def_name.c_str());
+        if (!mat_def)
+            return nullptr;
+    }
 
-   mi::base::Handle<const mi::neuraylib::IMaterial_definition> mat_def(
-       state.transaction->access<const mi::neuraylib::IMaterial_definition>(mat_def_name.c_str()));
-   if (!mat_def)
-       return nullptr;
+    mi::base::Handle<mi::neuraylib::ICompiled_material> cm(nullptr); {
+        // Create instance
+        mi::base::Handle<mi::neuraylib::IMaterial_instance> mat_inst(
+            mat_def->create_material_instance(nullptr));
+        if (!mat_def)
+            return nullptr;
 
-   // Create instance
-   mi::base::Handle<mi::neuraylib::IMaterial_instance> mat_inst(
-       mat_def->create_material_instance(nullptr));
-   if (!mat_def)
-       return nullptr;
+        // Compile
+        cm = mat_inst->create_compiled_material(mi::neuraylib::IMaterial_instance::DEFAULT_OPTIONS, context.get());
+        if (!print_messages(context.get()))
+            return nullptr;
+        if (cm) 
+            cm->retain();
+    }
 
-   // Compile
-   mi::base::Handle<mi::neuraylib::ICompiled_material> cm(
-       mat_inst->create_compiled_material(
-           mi::neuraylib::IMaterial_instance::DEFAULT_OPTIONS, context.get()));
-   if (!print_messages(context.get()))
-       return nullptr;
-
-   if (!cm)
-       return nullptr;
-   cm->retain();
-   return cm.get();
+    return cm.get();
 }
 
 
@@ -2494,39 +2491,43 @@ static void parse(int argc, char **argv, Options &options)
             options.material_names.push_back(opt);
         }
     }
-    if (options.material_names.empty()) {
-        options.material_names.push_back("::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
-    }
 }
 
 int main(int argc, char* argv[])
 {
-    Options options;
-    parse(argc, argv, options);
-
     mdlsdk_init();
 
     if (neuray.get()){
-        Mdl_sdk_state sdk_state(neuray); 
-        {
-            std::vector<mi::base::Handle<const mi::neuraylib::ICompiled_material> > distilled_materials;
+        Mdl_sdk_state sdk_state(neuray);
+
+        Options options; {
+            parse(argc, argv, options);
+            if (options.material_names.empty()) {
+                options.material_names.push_back("::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
+            }
+        }
+
+        typedef const mi::neuraylib::ICompiled_material ICompiled_material;
+        std::vector<mi::base::Handle<ICompiled_material> > distilled_materials; {
             for (mi::Size i = 0; i < options.material_names.size(); ++i)
             {
                 // Load and compile material
-                mi::base::Handle<mi::neuraylib::ICompiled_material> cm(
-                    compile_material(sdk_state, options.material_names[i]));
-                check_success(cm.is_valid_interface());
+                std::cout << "\nCompiling material: " << options.material_names[i] << std::endl;
+                mi::base::Handle<ICompiled_material> cm(compile_material(sdk_state, options.material_names[i]));
+                check_success(cm.get());
 
                 // Distill to UE4 target
-                mi::base::Handle<const mi::neuraylib::ICompiled_material> dm(
-                    distill_material(sdk_state, "ue4", cm.get()));
-                check_success(dm.is_valid_interface());
+                mi::base::Handle<ICompiled_material> dm(distill_material(sdk_state, "ue4", cm.get()));
+                check_success(dm.get());
 
                 distilled_materials.push_back(dm);
+                std::cout << "Done.\n\n";
             }
-            render_scene(sdk_state, distilled_materials, options);
         }
-        sdk_state.transaction->commit();
+
+        render_scene(sdk_state, distilled_materials, options);
+
+        sdk_state.free();
     }
 
     mdlsdk_stop();
