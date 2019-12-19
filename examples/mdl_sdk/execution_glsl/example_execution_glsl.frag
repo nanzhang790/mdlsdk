@@ -57,14 +57,14 @@ vec3 mdl_mat_subexpr(uint id, State state);
 
 
 #if __VERSION__ < 400
-uint bitCount(uint x)
+int bitCount(uint x)
 {
     x = x - ((x >> 1u) & 0x55555555u);
     x = (x & 0x33333333u) + ((x >> 2u) & 0x33333333u);
     x = (x + (x >> 4u)) & 0x0F0F0F0Fu;
     x = x + (x >> 8u);
     x = x + (x >> 16u);
-    return x & 0x0000003Fu;
+    return int(x & 0x0000003Fu);
 }
 #endif
 
@@ -95,7 +95,7 @@ vec3 position()
 // The fragment shader main function evaluating the MDL sub-expression.
 void main() {
     // Set number of materials to use according to selected pattern
-    uint num_materials = bitCount(material_pattern);
+    uint num_materials = uint(bitCount(material_pattern));
 
     // Assign materials in a checkerboard pattern
     uint material_index =

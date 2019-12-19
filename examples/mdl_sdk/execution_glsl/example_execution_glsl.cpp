@@ -1119,7 +1119,7 @@ static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray)
 //------------------------------------------------------------------------------
 static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
 
-void mdlsdk_init(void)
+static void mdlsdk_init(void)
 {
     // Access the MDL SDK
     if (neuray != nullptr) return;
@@ -1129,16 +1129,14 @@ void mdlsdk_init(void)
     check_success(neuray.is_valid_interface());
     // Configure the MDL SDK
     configure(neuray.get());
-}
 
-void mdlsdk_start(void)
-{
     // Start the MDL SDK
     mi::Sint32 result = neuray->start();
     check_start_success(result);
+
 }
 
-void mdlsdk_stop(void)
+static void mdlsdk_stop(void)
 {
     // Shut down the MDL SDK
     check_success(neuray->shutdown() == 0);
@@ -1155,8 +1153,6 @@ void mdlsdk_stop(void)
 int main(int argc, char* argv[])
 {
     mdlsdk_init();
-
-    mdlsdk_start();
 
     // Init OpenGL window
     GLFWwindow *window = nullptr; {

@@ -831,7 +831,7 @@ private:
 
             // Create baker for current path
             mi::base::Handle<const mi::neuraylib::IBaker> baker(distiller_api->create_baker(
-                m_cm.get(), param.bake_path.c_str(), mi::neuraylib::BAKE_ON_GPU));
+                m_cm.get(), param.bake_path.c_str(), mi::neuraylib::BAKE_ON_GPU_WITH_CPU_FALLBACK));
             check_success(baker.is_valid_interface());
 
             if (baker->is_uniform())
@@ -2391,6 +2391,36 @@ mi::neuraylib::ICompiled_material* compile_material(
    return cm.get();
 }
 
+
+static mi::base::Handle<mi::neuraylib::INeuray> neuray(nullptr);
+
+static void mdlsdk_init(void)
+{
+    // Access the MDL SDK
+    if (neuray != nullptr) return;
+
+    //mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
+    neuray = load_and_get_ineuray();
+    check_success(neuray.is_valid_interface());
+    // Configure the MDL SDK
+    configure(neuray.get());
+
+    // Start the MDL SDK
+    mi::Sint32 result = neuray->start();
+    check_start_success(result);
+
+}
+
+static void mdlsdk_stop(void)
+{
+    // Shut down the MDL SDK
+    check_success(neuray->shutdown() == 0);
+    neuray = nullptr;
+
+    // Unload the MDL SDK
+    check_success(unload());
+}
+
 // Prints program usage
 static void usage(const char *name)
 {
@@ -2409,40 +2439,52 @@ static void usage(const char *name)
     exit(EXIT_FAILURE);
 }
 
-int main(int argc, char* argv[])
+static void parse(int argc, char **argv, Options &options)
 {
-    // Parse command line
-    Options options;
-
     for (int i = 1; i < argc; ++i) {
         const char *opt = argv[i];
         if (opt[0] == '-') {
             if (strcmp(opt, "--nowin") == 0) {
                 options.show_window = false;
-            } else if (strcmp(opt, "--mdl_path") == 0 && i < argc - 1) {
+            }
+            else if (strcmp(opt, "--mdl_path") == 0 && i < argc - 1) {
                 options.mdl_paths.push_back(argv[++i]);
-            } else if (strcmp(opt, "--hdr") == 0 && i < argc - 1) {
+            }
+            else if (strcmp(opt, "--hdr") == 0 && i < argc - 1) {
                 options.hdrfile = argv[++i];
-            } else if (strcmp(opt, "--no_baking") == 0) {
+            }
+            else if (strcmp(opt, "--no_baking") == 0) {
                 options.bake = false;
-            } else if (strcmp(opt, "-e") == 0 && i < argc - 1) {
+            }
+            else if (strcmp(opt, "-e") == 0 && i < argc - 1) {
                 options.exposure = static_cast<float>(atof(argv[++i]));
-            } else if (strcmp(opt, "-o") == 0 && i < argc - 1) {
+            }
+            else if (strcmp(opt, "-o") == 0 && i < argc - 1) {
                 options.outputfile = argv[++i];
-            } else if (strcmp(opt, "-r") == 0 && i < argc - 2) {
+            }
+            else if (strcmp(opt, "-r") == 0 && i < argc - 2) {
                 options.baking_resolution_x = atoi(argv[++i]);
                 options.baking_resolution_y = atoi(argv[++i]);
-            } else {
+            }
+            else {
                 std::cout << "Unknown option: \"" << opt << "\"" << std::endl;
                 usage(argv[0]);
             }
         }
-        else
+        else {
             options.material_names.push_back(opt);
+        }
     }
-    if(options.material_names.empty())
+    if (options.material_names.empty()) {
         options.material_names.push_back(
             "::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    Options options;
+    parse(argc, argv, options);
 
     // Access the MDL SDK
     mi::base::Handle<mi::neuraylib::INeuray> neuray(load_and_get_ineuray());
@@ -2460,6 +2502,7 @@ int main(int argc, char* argv[])
     const std::string root = get_samples_mdl_root();
     // Set resource path required for image loading
     check_success(mdl_compiler->add_resource_path(root.c_str()) == 0);
+
     // Set MDL module paths
     check_success(mdl_compiler->add_module_path(root.c_str()) == 0);
     for (std::size_t i = 0; i < options.mdl_paths.size(); ++i)
@@ -2467,12 +2510,12 @@ int main(int argc, char* argv[])
 
     // Start the MDL SDK
     mi::Sint32 result = neuray->start();
+    check_start_success(result);
 
     //  Access MDL factory
     mi::base::Handle<mi::neuraylib::IMdl_factory> mdl_factory(
         neuray->get_api_component<mi::neuraylib::IMdl_factory>());
 
-    check_start_success(result);
     {
         Mdl_sdk_state sdk_state;
         sdk_state.mdl_sdk = neuray;
