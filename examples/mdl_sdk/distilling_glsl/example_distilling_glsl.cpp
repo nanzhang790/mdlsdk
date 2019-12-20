@@ -2124,21 +2124,24 @@ void render_scene(
     }
     printf("Initializing OpenGL done.\n");
 
-    // Get image API
-    mi::base::Handle<mi::neuraylib::IImage_api> image_api(
-        state.mdl_sdk->get_api_component<mi::neuraylib::IImage_api>());
-
     // Load environment texture and compute IBL maps
     printf("Generating maps ...\n"); 
-    mi::base::Handle<const mi::neuraylib::ICanvas> env_tex_canvas =
-        load_image_from_file(image_api.get(), state.transaction.get(), options.hdrfile.c_str());
-    GLuint env_accel_tex_id = create_environment_accel_texture(env_tex_canvas);
-    GLuint env_tex_id = load_gl_texture(GL_TEXTURE_2D, env_tex_canvas);
-    GLuint iblmap_id = prefilter_diffuse(128, 128, env_tex_id, env_accel_tex_id);
-    GLuint refmap_id = prefilter_glossy(512, 512, env_tex_id, env_accel_tex_id);
-    GLuint brdflutid = integrate_brdf(512, 512);
-    env_tex_canvas = 0;
-    glDeleteTextures(1, &env_accel_tex_id);
+    GLuint env_tex_id = 0, iblmap_id= 0, refmap_id = 0, brdflutid = 0; {
+        GLuint env_accel_tex_id = 0; {
+            // Get image API
+            mi::base::Handle<mi::neuraylib::IImage_api> image_api(
+                state.mdl_sdk->get_api_component<mi::neuraylib::IImage_api>());
+            mi::base::Handle<const mi::neuraylib::ICanvas> env_tex_canvas =
+                load_image_from_file(image_api.get(), state.transaction.get(), options.hdrfile.c_str());
+            env_accel_tex_id = create_environment_accel_texture(env_tex_canvas);
+            env_tex_id = load_gl_texture(GL_TEXTURE_2D, env_tex_canvas);
+            env_tex_canvas = 0;
+        }
+        iblmap_id = prefilter_diffuse(128, 128, env_tex_id, env_accel_tex_id);
+        refmap_id = prefilter_glossy(512, 512, env_tex_id, env_accel_tex_id);
+        brdflutid = integrate_brdf(512, 512);
+        glDeleteTextures(1, &env_accel_tex_id);
+    }
     printf("Generating maps done.\n");
 
     glViewport(0, 0, window_context.width, window_context.height);
@@ -2152,13 +2155,12 @@ void render_scene(
         quad.bind_shader(&env_shader);
 
         // Camera position
-        float cam_dist = 3.f;
+        const float cam_dist = 3.f;
         double phi = 0.0f, theta = (M_PI * 0.5);
-        mi::Float32_3 cam_pos(0.f, 0.f, cam_dist);
-        mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
-        mi::Float32_3 cam_up(0.f, 1.f, 0.f);
-        mi::Float32_4_4 mv, inv_mv;
-        mi::Float32_4_4 proj, inv_proj; 
+        mi::Float32_3 cam_pos;
+        const mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
+        mi::Float32_3 cam_up;
+        mi::Float32_4_4 mv, inv_mv, proj, inv_proj; 
         int first = 1;
         float exposure_scale = 1;
         Sphere sphere(1.f, 64, 64);
@@ -2178,21 +2180,13 @@ void render_scene(
                 // create, if it does not exist yet
                 if (!sphere_shader)
                 {
-                    std::cout << "Generating shader " << window_context.material <<
-                        " in " << (index ? "GLSL" : "baked")
-                        << " mode ..." << std::endl;
+                    std::cout << "Generating shader " << window_context.material << " in " << (index ? "GLSL" : "baked") << " mode ..." << std::endl;
 
-                    Mdl_ue4* mdl_ue4 = nullptr;
-                    if (window_context.bake)
-                        mdl_ue4 = new Mdl_ue4_baker(
-                            state, distilled_materials[window_context.material].get(),
-                            options.baking_resolution_x, options.baking_resolution_y);
-                    else
-                        mdl_ue4 = new Mdl_ue4_glsl(
-                            state, distilled_materials[window_context.material].get());
+                    Mdl_ue4* mdl_ue4 = (window_context.bake) ?
+                        (Mdl_ue4*)(new Mdl_ue4_baker(state, distilled_materials[window_context.material].get(), options.baking_resolution_x, options.baking_resolution_y)) :
+                        (Mdl_ue4*)(new Mdl_ue4_glsl(state, distilled_materials[window_context.material].get()));
 
-                    sphere_shader = new Mdl_pbr_shader(
-                        state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
+                    sphere_shader = new Mdl_pbr_shader(state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
 
                     pbr_shaders[window_context.material * 2 + index] = sphere_shader;
 
@@ -2207,21 +2201,15 @@ void render_scene(
                 theta = std::min(theta, 0.95 * M_PI);
                 window_context.move_dx = window_context.move_dy = 0.0;
 
-                cam_pos.x = float(sin(phi) * sin(theta));
-                cam_pos.y = float(cos(theta));
-                cam_pos.z = float(cos(phi) * sin(theta));
-                cam_up.x = float(-sin(phi) * cos(theta));
-                cam_up.y = float(sin(theta));
-                cam_up.z = float(-cos(phi) * cos(theta));
-
+                cam_pos = mi::Float32_3(sin(phi) * sin(theta), cos(theta), cos(phi) * sin(theta));
+                cam_up = mi::Float32_3(-sin(phi) * cos(theta), sin(theta), -cos(phi) * cos(theta));
                 const float dist = float(cam_dist * pow(0.95, double(window_context.zoom)));
                 cam_pos *= dist;
                 mv.lookat(cam_pos, cam_interest, cam_up);
                 inv_mv = mv;
                 inv_mv.transpose();
 
-                proj = projection(45.f,
-                    float(window_context.width) / float(window_context.height), 1.f, 100.f);
+                proj = projection(45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
                 inv_proj = proj;
                 inv_proj.invert();
 
@@ -2234,10 +2222,8 @@ void render_scene(
             env_shader.set_float("exposure_scale", exposure_scale);
             env_shader.set_matrix("inv_mv", inv_mv);
             env_shader.set_matrix("inv_proj", inv_proj);
-
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, env_tex_id);
-
             quad.draw();
 
             sphere_shader->make_current();
@@ -2246,7 +2232,6 @@ void render_scene(
             sphere_shader->set_matrix("m_projection", proj);
             sphere_shader->set_vector3("cam_position", cam_pos);
             sphere_shader->bind_textures();
-
             sphere.draw();
 
             // Swap front and back buffers
@@ -2279,8 +2264,7 @@ const mi::neuraylib::ICompiled_material* distill_material(
     mi::base::Handle<mi::neuraylib::IMdl_distiller_api> distiller_api(
         state.mdl_sdk->get_api_component<mi::neuraylib::IMdl_distiller_api>());
     check_success(distiller_api);
-    const mi::neuraylib::ICompiled_material* dm =
-        distiller_api->distill_material(cm, target_model.c_str());
+    const mi::neuraylib::ICompiled_material* dm = distiller_api->distill_material(cm, target_model.c_str());
     check_success(dm);
     return dm;
 }
