@@ -2108,19 +2108,13 @@ void render_scene(
      & distilled_materials,
     const Options& options)
 {
-    check_success(distilled_materials.size());
-
-    Window_context window_context;
-    window_context.bake = options.bake;
-    window_context.exposure = options.exposure;
-
     // Init OpenGL window and setup event callbacks
     printf("Initializing OpenGL ...\n");
-    GLFWwindow *window = init_opengl(
-        window_context.width, window_context.height, options.show_window);
-
-    if (options.show_window)
-    {
+    Window_context window_context; {
+        window_context.bake = options.bake;
+        window_context.exposure = options.exposure;
+    }
+    GLFWwindow *window = init_opengl(window_context.width, window_context.height, options.show_window); {
         glfwSetWindowUserPointer(window, &window_context);
         glfwSetKeyCallback(window, handle_key);
         glfwSetFramebufferSizeCallback(window, handle_framebuffer_size);
@@ -2135,29 +2129,22 @@ void render_scene(
         state.mdl_sdk->get_api_component<mi::neuraylib::IImage_api>());
 
     // Load environment texture and compute IBL maps
-    printf("Generating maps ...\n");
-
+    printf("Generating maps ...\n"); 
     mi::base::Handle<const mi::neuraylib::ICanvas> env_tex_canvas =
         load_image_from_file(image_api.get(), state.transaction.get(), options.hdrfile.c_str());
-
     GLuint env_accel_tex_id = create_environment_accel_texture(env_tex_canvas);
-
     GLuint env_tex_id = load_gl_texture(GL_TEXTURE_2D, env_tex_canvas);
-
     GLuint iblmap_id = prefilter_diffuse(128, 128, env_tex_id, env_accel_tex_id);
     GLuint refmap_id = prefilter_glossy(512, 512, env_tex_id, env_accel_tex_id);
     GLuint brdflutid = integrate_brdf(512, 512);
-
     env_tex_canvas = 0;
     glDeleteTextures(1, &env_accel_tex_id);
-
     printf("Generating maps done.\n");
 
     glViewport(0, 0, window_context.width, window_context.height);
     {
         // Create scene data
         std::vector<Mdl_pbr_shader*> pbr_shaders(distilled_materials.size() * 2, nullptr);
-        Sphere sphere(1.f, 64, 64);
         Shader_program env_shader(
             get_executable_folder() + "/" + "screen_aligned_quad.vert",
             get_executable_folder() + "/" + "environment_sphere.frag");
@@ -2170,17 +2157,11 @@ void render_scene(
         mi::Float32_3 cam_pos(0.f, 0.f, cam_dist);
         mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
         mi::Float32_3 cam_up(0.f, 1.f, 0.f);
-
-        mi::Float32_4_4 mv(1.0f);
-        mv.lookat(cam_pos, cam_interest, cam_up);
-        mi::Float32_4_4 inv_mv(mv);
-        inv_mv.transpose();
-
-        mi::Float32_4_4 proj = projection(45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
-        mi::Float32_4_4 inv_proj(proj);
-        inv_proj.invert();
+        mi::Float32_4_4 mv, inv_mv;
+        mi::Float32_4_4 proj, inv_proj; 
         int first = 1;
         float exposure_scale = 1;
+        Sphere sphere(1.f, 64, 64);
 
         // Loop until the user closes the window
         while (!glfwWindowShouldClose(window)) {
@@ -2274,8 +2255,9 @@ void render_scene(
             // Poll for events and process them
             glfwPollEvents();
         }
-        for (mi::Size i = 0; i < pbr_shaders.size(); ++i)
+        for (mi::Size i = 0; i < pbr_shaders.size(); ++i) {
             delete pbr_shaders[i];
+        }
     }
 
     glDeleteTextures(1, &env_tex_id);
