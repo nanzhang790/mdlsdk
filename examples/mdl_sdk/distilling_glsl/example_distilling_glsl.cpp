@@ -431,8 +431,7 @@ protected:
             semantic = get_call_semantic(transaction, parent_call.get());
             path_prefix += "base.";
         }
-        if (semantic ==
-            mi::neuraylib::IFunction_definition::DS_INTRINSIC_DF_MICROFACET_GGX_VCAVITIES_BSDF)
+        if (semantic == mi::neuraylib::IFunction_definition::DS_INTRINSIC_DF_MICROFACET_GGX_VCAVITIES_BSDF)
         {
             if (!has_metallic)
             {
@@ -461,7 +460,6 @@ protected:
         }
         if (!has_normal)
             add_material_expression("normal", "geometry.normal");
-
 
         if (!has_base_color) // should not happen
             add_color_default("base_color");
@@ -498,33 +496,34 @@ public:
         , m_context(state.factory->create_execution_context())
     {
         // Access GLSL backend
-        m_be_glsl = state.mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL);
-        check_success(m_be_glsl);
+        m_be_glsl = state.mdl_compiler->get_backend(mi::neuraylib::IMdl_compiler::MB_GLSL); {
+            check_success(m_be_glsl);
 
-        // Set backend options
-        check_success(m_be_glsl->set_option("num_texture_spaces", "1") == 0);
-
-#ifdef USE_SSBO
-        // SSBO requires GLSL 4.30
-        check_success(m_be_glsl->set_option("glsl_version", "430") == 0);
-#else
-        check_success(m_be_glsl->set_option("glsl_version", "330") == 0);
-#endif
-
-        check_success(m_be_glsl->set_option("glsl_state_normal_mode", "field") == 0);
-        check_success(m_be_glsl->set_option("glsl_state_position_mode", "field") == 0);
-        check_success(m_be_glsl->set_option("glsl_state_texture_coordinate_mode", "field") == 0);
-        check_success(m_be_glsl->set_option("glsl_state_texture_tangent_u_mode", "field") == 0);
-        check_success(m_be_glsl->set_option("glsl_state_texture_tangent_v_mode", "field") == 0);
-        check_success(m_be_glsl->set_option("glsl_state_texture_space_max_mode", "field") == 0);
+            // Set backend options
+            check_success(m_be_glsl->set_option("num_texture_spaces", "1") == 0);
 
 #ifdef USE_SSBO
-        check_success(m_be_glsl->set_option("glsl_max_const_data", "0") == 0);
-        check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "on") == 0);
+            // SSBO requires GLSL 4.30
+            check_success(m_be_glsl->set_option("glsl_version", "430") == 0);
 #else
-        check_success(m_be_glsl->set_option("glsl_max_const_data", "1024") == 0);
-        check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "off") == 0);
+            check_success(m_be_glsl->set_option("glsl_version", "330") == 0);
 #endif
+
+            check_success(m_be_glsl->set_option("glsl_state_normal_mode", "field") == 0);
+            check_success(m_be_glsl->set_option("glsl_state_position_mode", "field") == 0);
+            check_success(m_be_glsl->set_option("glsl_state_texture_coordinate_mode", "field") == 0);
+            check_success(m_be_glsl->set_option("glsl_state_texture_tangent_u_mode", "field") == 0);
+            check_success(m_be_glsl->set_option("glsl_state_texture_tangent_v_mode", "field") == 0);
+            check_success(m_be_glsl->set_option("glsl_state_texture_space_max_mode", "field") == 0);
+
+#ifdef USE_SSBO
+            check_success(m_be_glsl->set_option("glsl_max_const_data", "0") == 0);
+            check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "on") == 0);
+#else
+            check_success(m_be_glsl->set_option("glsl_max_const_data", "1024") == 0);
+            check_success(m_be_glsl->set_option("glsl_place_uniforms_into_ssbo", "off") == 0);
+#endif
+        }
 
 #ifdef REMAP_NOISE_FUNCTIONS
         // remap noise functions that access the constant tables
@@ -1524,7 +1523,6 @@ public:
 class Sphere : public Mesh
 {
 public:
-
     Sphere(const float radius, const unsigned int slices, const unsigned int stacks)
     {
         std::vector<unsigned int> indices;
@@ -1546,8 +1544,7 @@ public:
                 const float cos_p = cos(phi);
 
                 const mi::Float32_3 p(sin_p * sin_t, cos_t, cos_p * sin_t);
-                const mi::Float32_2 uv(
-                    2.0f * float(j) / float(slices), 1.0f - float(i) / float(stacks));
+                const mi::Float32_2 uv(2.0f * float(j) / float(slices), 1.0f - float(i) / float(stacks));
 
                 mi::Float32_3 tangent_u = mi::Float32_3(cos_p, 0.0f, -sin_p);
                 mi::Float32_3 tangent_v = cross(p, tangent_u);
@@ -1574,13 +1571,8 @@ public:
             }
         }        
 
-        create_vertex_array(m_vao, m_vbo, vertices.data(),
-            (GLsizei) (vertices.size() * sizeof(Vertex)));
-
-
-        create_index_buffer(m_ebo, indices.data(), (GLsizei) (
-            indices.size() * sizeof(unsigned int)));
-
+        create_vertex_array(m_vao, m_vbo, vertices.data(), (GLsizei) (vertices.size() * sizeof(Vertex)));
+        create_index_buffer(m_ebo, indices.data(), (GLsizei) (indices.size() * sizeof(unsigned int)));
         m_nindices = (GLuint) indices.size();
 
         check_gl_success();
@@ -1597,7 +1589,6 @@ public:
     virtual void bind_shader(Shader_program* program)
     {
         // set locations of vertex shader inputs
-
         glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
         program->make_current();
@@ -1617,17 +1608,15 @@ public:
     {
         glBindVertexArray(m_vao);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-
         glDrawElements(
             GL_TRIANGLES,      // mode
             m_nindices,        // count
             GL_UNSIGNED_INT,   // type
-            (void*)0           // element array buffer offset
+            nullptr            // element array buffer offset
         );
     }
 
 private:
-
     GLuint m_vbo, m_vao, m_ebo;
     GLuint m_nindices;
 };
@@ -1680,8 +1669,7 @@ private:
 };
 
 // Convert degree to radians
-static mi::Float64 deg_to_rad(mi::Float64 v)
-{
+inline mi::Float64 deg_to_rad(mi::Float64 v) {
     return v * 3.1415926 / 180.;
 }
 
@@ -2144,7 +2132,6 @@ void render_scene(
     }
     printf("Generating maps done.\n");
 
-    glViewport(0, 0, window_context.width, window_context.height);
     {
         // Create scene data
         std::vector<Mdl_pbr_shader*> pbr_shaders(distilled_materials.size() * 2, nullptr);
@@ -2157,12 +2144,10 @@ void render_scene(
         // Camera position
         const float cam_dist = 3.f;
         double phi = 0.0f, theta = (M_PI * 0.5);
-        mi::Float32_3 cam_pos;
+        mi::Float32_3 cam_pos, cam_up;
         const mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
-        mi::Float32_3 cam_up;
         mi::Float32_4_4 mv, inv_mv, proj, inv_proj; 
         int first = 1;
-        float exposure_scale = 1;
         Sphere sphere(1.f, 64, 64);
 
         // Loop until the user closes the window
@@ -2172,29 +2157,25 @@ void render_scene(
             window_context.material = window_context.material % num_materials;
             if (window_context.material < 0)
                 window_context.material += num_materials;
-            int index = window_context.bake ? 0 : 1;
-            Mdl_pbr_shader* sphere_shader = pbr_shaders[window_context.material * 2 + index];
+            const int shader_index = window_context.material * 2 + (window_context.bake ? 0 : 1);
             if (window_context.event || first)
             {
                 first = 0;
                 // create, if it does not exist yet
-                if (!sphere_shader)
+                if (!pbr_shaders[shader_index])
                 {
-                    std::cout << "Generating shader " << window_context.material << " in " << (index ? "GLSL" : "baked") << " mode ..." << std::endl;
+                    std::cout << "Generating shader " << window_context.material << " in " << (!window_context.bake ? "GLSL" : "baked") << " mode ..." << std::endl;
 
                     Mdl_ue4* mdl_ue4 = (window_context.bake) ?
                         (Mdl_ue4*)(new Mdl_ue4_baker(state, distilled_materials[window_context.material].get(), options.baking_resolution_x, options.baking_resolution_y)) :
                         (Mdl_ue4*)(new Mdl_ue4_glsl(state, distilled_materials[window_context.material].get()));
 
-                    sphere_shader = new Mdl_pbr_shader(state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
-
-                    pbr_shaders[window_context.material * 2 + index] = sphere_shader;
+                    pbr_shaders[shader_index] = new Mdl_pbr_shader(state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
 
                     std::cout << "Generating shader done." << std::endl;
                 }
-                sphere.bind_shader(sphere_shader);
+                sphere.bind_shader(pbr_shaders[shader_index]);
 
-                exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
                 phi -= window_context.move_dx * 0.001 * M_PI;
                 theta -= window_context.move_dy * 0.001 * M_PI;
                 theta = std::max(theta, 0.05 * M_PI);
@@ -2217,21 +2198,26 @@ void render_scene(
             }
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glViewport(0, 0, window_context.width, window_context.height);
 
-            env_shader.make_current();
-            env_shader.set_float("exposure_scale", exposure_scale);
-            env_shader.set_matrix("inv_mv", inv_mv);
-            env_shader.set_matrix("inv_proj", inv_proj);
+            const float exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
+            env_shader.make_current(); {
+                env_shader.set_float("exposure_scale", exposure_scale);
+                env_shader.set_matrix("inv_mv", inv_mv);
+                env_shader.set_matrix("inv_proj", inv_proj);
+            }
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, env_tex_id);
             quad.draw();
 
-            sphere_shader->make_current();
-            sphere_shader->set_float("exposure_scale", exposure_scale);
-            sphere_shader->set_matrix("m_view", mv);
-            sphere_shader->set_matrix("m_projection", proj);
-            sphere_shader->set_vector3("cam_position", cam_pos);
-            sphere_shader->bind_textures();
+            Mdl_pbr_shader* sphere_shader = pbr_shaders[shader_index]; {
+                sphere_shader->make_current();
+                sphere_shader->set_float("exposure_scale", exposure_scale);
+                sphere_shader->set_matrix("m_view", mv);
+                sphere_shader->set_matrix("m_projection", proj);
+                sphere_shader->set_vector3("cam_position", cam_pos);
+                sphere_shader->bind_textures();
+            }
             sphere.draw();
 
             // Swap front and back buffers
