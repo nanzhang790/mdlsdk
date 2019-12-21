@@ -2144,9 +2144,7 @@ void render_scene(
         // Camera position
         const float cam_dist = 3.f;
         double phi = 0.0f, theta = (M_PI * 0.5);
-        mi::Float32_3 cam_pos, cam_up;
         const mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
-        mi::Float32_4_4 mv, inv_mv, proj, inv_proj; 
         int first = 1;
         Sphere sphere(1.f, 64, 64);
 
@@ -2158,11 +2156,12 @@ void render_scene(
             if (window_context.material < 0)
                 window_context.material += num_materials;
             const int shader_index = window_context.material * 2 + (window_context.bake ? 0 : 1);
+            auto &sphere_shader = pbr_shaders[shader_index];
             if (window_context.event || first)
             {
                 first = 0;
                 // create, if it does not exist yet
-                if (!pbr_shaders[shader_index])
+                if (!sphere_shader)
                 {
                     std::cout << "Generating shader " << window_context.material << " in " << (!window_context.bake ? "GLSL" : "baked") << " mode ..." << std::endl;
 
@@ -2170,11 +2169,10 @@ void render_scene(
                         (Mdl_ue4*)(new Mdl_ue4_baker(state, distilled_materials[window_context.material].get(), options.baking_resolution_x, options.baking_resolution_y)) :
                         (Mdl_ue4*)(new Mdl_ue4_glsl(state, distilled_materials[window_context.material].get()));
 
-                    pbr_shaders[shader_index] = new Mdl_pbr_shader(state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
+                    sphere_shader = new Mdl_pbr_shader(state, mdl_ue4, iblmap_id, refmap_id, brdflutid);
 
                     std::cout << "Generating shader done." << std::endl;
                 }
-                sphere.bind_shader(pbr_shaders[shader_index]);
 
                 phi -= window_context.move_dx * 0.001 * M_PI;
                 theta -= window_context.move_dy * 0.001 * M_PI;
@@ -2182,17 +2180,33 @@ void render_scene(
                 theta = std::min(theta, 0.95 * M_PI);
                 window_context.move_dx = window_context.move_dy = 0.0;
 
-                cam_pos = mi::Float32_3(sin(phi) * sin(theta), cos(theta), cos(phi) * sin(theta));
-                cam_up = mi::Float32_3(-sin(phi) * cos(theta), sin(theta), -cos(phi) * cos(theta));
+                const mi::Float32_3 cam_up = mi::Float32_3(-sin(phi) * cos(theta), sin(theta), -cos(phi) * cos(theta));
                 const float dist = float(cam_dist * pow(0.95, double(window_context.zoom)));
-                cam_pos *= dist;
+                const mi::Float32_3 cam_pos = mi::Float32_3(sin(phi) * sin(theta), cos(theta), cos(phi) * sin(theta)) * dist;
+                mi::Float32_4_4 mv;
                 mv.lookat(cam_pos, cam_interest, cam_up);
-                inv_mv = mv;
+                mi::Float32_4_4 inv_mv = mv;
                 inv_mv.transpose();
 
-                proj = projection(45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
-                inv_proj = proj;
+                const mi::Float32_4_4 proj = projection(45.f, float(window_context.width) / float(window_context.height), 1.f, 100.f);
+                mi::Float32_4_4 inv_proj = proj;
                 inv_proj.invert();
+
+                const float exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
+
+                env_shader.make_current(); {
+                    env_shader.set_float("exposure_scale", exposure_scale);
+                    env_shader.set_matrix("inv_mv", inv_mv);
+                    env_shader.set_matrix("inv_proj", inv_proj);
+                }
+
+                sphere.bind_shader(sphere_shader);
+                sphere_shader->make_current(); {
+                    sphere_shader->set_float("exposure_scale", exposure_scale);
+                    sphere_shader->set_matrix("m_view", mv);
+                    sphere_shader->set_matrix("m_projection", proj);
+                    sphere_shader->set_vector3("cam_position", cam_pos);
+                }
 
                 window_context.event = false;
             }
@@ -2200,24 +2214,13 @@ void render_scene(
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glViewport(0, 0, window_context.width, window_context.height);
 
-            const float exposure_scale = static_cast<float>(pow(2.0, window_context.exposure));
-            env_shader.make_current(); {
-                env_shader.set_float("exposure_scale", exposure_scale);
-                env_shader.set_matrix("inv_mv", inv_mv);
-                env_shader.set_matrix("inv_proj", inv_proj);
-            }
+            env_shader.make_current();
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, env_tex_id);
             quad.draw();
 
-            Mdl_pbr_shader* sphere_shader = pbr_shaders[shader_index]; {
-                sphere_shader->make_current();
-                sphere_shader->set_float("exposure_scale", exposure_scale);
-                sphere_shader->set_matrix("m_view", mv);
-                sphere_shader->set_matrix("m_projection", proj);
-                sphere_shader->set_vector3("cam_position", cam_pos);
-                sphere_shader->bind_textures();
-            }
+            sphere_shader->make_current();
+            sphere_shader->bind_textures();
             sphere.draw();
 
             // Swap front and back buffers
