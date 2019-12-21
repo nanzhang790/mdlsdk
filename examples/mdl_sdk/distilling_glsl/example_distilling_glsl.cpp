@@ -1945,6 +1945,7 @@ void handle_key(GLFWwindow *window, int key, int /*scancode*/, int action, int /
             case GLFW_KEY_UP:
             case GLFW_KEY_DOWN:
                 ctx->bake = !ctx->bake;
+                printf("Bake mode is %d now!\n", int(ctx->bake));
                 ctx->event = true;
                 break;
             case GLFW_KEY_KP_SUBTRACT:
@@ -2142,28 +2143,21 @@ void render_scene(
         quad.bind_shader(&env_shader);
 
         // Camera position
-        const float cam_dist = 3.f;
         double phi = 0.0f, theta = (M_PI * 0.5);
-        const mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
-        int first = 1;
         Sphere sphere(1.f, 64, 64);
 
         // Loop until the user closes the window
         while (!glfwWindowShouldClose(window)) {
             // Render the scene            
             const int num_materials = int(distilled_materials.size());
-            window_context.material = window_context.material % num_materials;
-            if (window_context.material < 0)
-                window_context.material += num_materials;
-            const int shader_index = window_context.material * 2 + (window_context.bake ? 0 : 1);
+            window_context.material = abs(window_context.material) % num_materials;
+            const int shader_index = window_context.material * 2 + int(window_context.bake);
             auto &sphere_shader = pbr_shaders[shader_index];
-            if (window_context.event || first)
+            if (window_context.event || !sphere_shader)
             {
-                first = 0;
-                // create, if it does not exist yet
                 if (!sphere_shader)
                 {
-                    std::cout << "Generating shader " << window_context.material << " in " << (!window_context.bake ? "GLSL" : "baked") << " mode ..." << std::endl;
+                    std::cout << "Generating shader " << window_context.material << " in " << (window_context.bake ? "baked" : "GLSL") << " mode ..." << std::endl;
 
                     Mdl_ue4* mdl_ue4 = (window_context.bake) ?
                         (Mdl_ue4*)(new Mdl_ue4_baker(state, distilled_materials[window_context.material].get(), options.baking_resolution_x, options.baking_resolution_y)) :
@@ -2181,8 +2175,10 @@ void render_scene(
                 window_context.move_dx = window_context.move_dy = 0.0;
 
                 const mi::Float32_3 cam_up = mi::Float32_3(-sin(phi) * cos(theta), sin(theta), -cos(phi) * cos(theta));
+                const float cam_dist = 3.f;
                 const float dist = float(cam_dist * pow(0.95, double(window_context.zoom)));
                 const mi::Float32_3 cam_pos = mi::Float32_3(sin(phi) * sin(theta), cos(theta), cos(phi) * sin(theta)) * dist;
+                const mi::Float32_3 cam_interest(0.f, 0.f, 0.f);
                 mi::Float32_4_4 mv;
                 mv.lookat(cam_pos, cam_interest, cam_up);
                 mi::Float32_4_4 inv_mv = mv;
