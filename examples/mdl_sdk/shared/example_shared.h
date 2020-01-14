@@ -373,8 +373,9 @@ inline std::string get_working_directory()
 inline std::string get_executable_folder()
 {
 #ifdef MI_PLATFORM_WINDOWS
-    char path[MAX_PATH];
-    if (!GetModuleFileNameA(nullptr, path, MAX_PATH))
+    const int MAX_PATH4096 = 4096;
+    char path[MAX_PATH4096];      //MAX_PATH
+    if (!GetModuleFileNameA(nullptr, path, MAX_PATH4096))
         return "";
 
     const char sep = '\\';
