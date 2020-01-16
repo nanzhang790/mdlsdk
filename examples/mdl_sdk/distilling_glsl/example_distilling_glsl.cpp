@@ -50,7 +50,7 @@
 //#define REMAP_NOISE_FUNCTIONS
 
 // Enable this to dump the generated GLSL code to stdout/file.
-//#define DUMP_GLSL
+const bool DUMP_GLSL = true;
 
 // Application options
 struct Options {
@@ -311,7 +311,7 @@ public:
     // Returns the read-only data segment data at index
     virtual const char* get_ro_data_segment_data(mi::Size) const
     {
-        return 0;
+        return nullptr;
     }
 
     // Returns the size of the read-only data segment data at index
@@ -323,7 +323,7 @@ public:
     // Returns the name of the read-only data segment data at index
     virtual const char* get_ro_data_segment_name(mi::Size) const
     {
-        return 0;
+        return nullptr;
     }
 
 protected:
@@ -449,8 +449,7 @@ protected:
                 is_metallic = true;
             }
         }
-        else if (semantic ==
-            mi::neuraylib::IFunction_definition::DS_INTRINSIC_DF_DIFFUSE_REFLECTION_BSDF)
+        else if (semantic == mi::neuraylib::IFunction_definition::DS_INTRINSIC_DF_DIFFUSE_REFLECTION_BSDF)
         {
             if (!has_base_color)
             {
@@ -1253,22 +1252,30 @@ public:
         , m_refl_map(refl_map)
         , m_brdf_lut_map(brdf_lut_map)
     {
+
+        //main fragment shader
+        const std::string glslpath = get_executable_folder();
+        const std::string fragment_code1 = read_text_file(glslpath + "/example_distilling_glsl.frag");
+
         // Setup GLSL programs
         // Get fragment code generated from MDL expressions
-        std::string fragment_code = mdl_ue4->get_code();
-        // Add main fragment shader
-        fragment_code += read_text_file(
-            get_executable_folder() + "/" + "example_distilling_glsl.frag");
+        const std::string fragment_code2 = mdl_ue4->get_code();
+        const std::string fragment_code = fragment_code2 + 
+            "//=============================================\n\n" + fragment_code1;
 
-#ifdef DUMP_GLSL
-        std::fstream file;
-        file.open("glsl_dump.frag", std::fstream::out);
-        file << fragment_code;
-        file.close();
-#endif
         // Compile and link shaders
-        m_program = create_shader_program(read_text_file(
-            get_executable_folder() + "/" + "example_distilling_glsl.vert"), fragment_code);
+        const std::string vertex_code = read_text_file(glslpath + "/example_distilling_glsl.vert");
+        m_program = create_shader_program(vertex_code, fragment_code);
+
+        if (DUMP_GLSL) {
+            std::fstream file;
+            file.open(glslpath + "/glsl_dump.vert", std::fstream::out);
+            file << vertex_code;
+            file.close();
+            file.open(glslpath + "/glsl_dump.frag", std::fstream::out);
+            file << fragment_code;
+            file.close();
+        }
 
         // Assign texture slots for IBL maps
         make_current();
