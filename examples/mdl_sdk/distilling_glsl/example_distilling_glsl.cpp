@@ -67,7 +67,7 @@ struct Options {
 
     Options() 
         : show_window(true)
-        , bake(true)
+        , bake(false)
         , baking_resolution_x(2048)
         , baking_resolution_y(2048)
         , exposure(0.0f)
@@ -543,6 +543,8 @@ public:
         check_success(print_messages(m_context.get()));
 
         m_code = m_target_code->get_code();
+        std::cout << "target code:\n" << m_code << "\n\n";
+        std::cout << "default code:\n" << m_defaults << "\n\n";
 #ifdef REMAP_NOISE_FUNCTIONS
         m_code += read_text_file(get_executable_folder() + "/" + "noise_no_lut.glsl");
 #endif
@@ -2390,7 +2392,8 @@ int main(int argc, char* argv[])
         Options options; {
             parse(argc, argv, options);
             if (options.material_names.empty()) {
-                options.material_names.push_back("::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
+                //options.material_names.push_back("::nvidia::sdk_examples::tutorials_distilling::example_distilling2");
+                options.material_names.push_back("::nvidia::sdk_examples::gltf_support::gltf_material_khr_specular_glossiness");
             }
         }
 
