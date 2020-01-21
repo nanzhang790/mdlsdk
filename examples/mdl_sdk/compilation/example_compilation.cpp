@@ -34,8 +34,8 @@ struct Options {
     // The constructor.
     Options()
         : material_name("::nvidia::sdk_examples::tutorials::example_compilation")
-        , expr_path("backface.scattering.tint")
-        , change_arguments(true)
+        , expr_path("surface.scattering.tint")
+        , change_arguments(false)
     {
     }
 };
@@ -394,6 +394,7 @@ int main( int argc, char* argv[])
             }
 
             // Use the various backends to generate target code for some material expression.
+			/*
             generate_llvm_ir(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -410,6 +411,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
+				*/
 #ifndef MDL_SOURCE_RELEASE
             generate_glsl(
                 transaction.get(), mdl_compiler.get(), context.get(),
@@ -420,6 +422,7 @@ int main( int argc, char* argv[])
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
 #endif /*MDL_SOURCE_RELEASE*/
+			/*
             generate_hlsl(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -428,6 +431,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
+				*/
         }
 
         transaction->commit();
