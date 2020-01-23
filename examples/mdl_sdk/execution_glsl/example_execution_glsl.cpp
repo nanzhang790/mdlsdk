@@ -57,7 +57,7 @@ inline bool use_ssbo() {
 
 
 // Enable this to dump the generated GLSL code to stdout.
-//#define DUMP_GLSL
+#define DUMP_GLSL
 
 char const* vertex_shader_filename   = "example_execution_glsl.vert";
 char const* fragment_shader_filename = "example_execution_glsl.frag";
@@ -782,6 +782,8 @@ public:
         const char* path,
         const char* fname);
 
+    bool add_material(const std::string& material_name);
+
     // Generates GLSL target code for a subexpression of a given compiled material.
     mi::base::Handle<const mi::neuraylib::ITarget_code> generate_glsl();
 
@@ -907,6 +909,24 @@ bool Material_compiler::add_material_subexpr(
     auto context = m_context.get();
     return print_messages(context);
 }
+
+
+bool Material_compiler::add_material(const std::string& material_name)
+{
+    // Load the given module and create a material instance
+    mi::base::Handle<mi::neuraylib::IMaterial_instance> material_instance(
+        create_material_instance(material_name.c_str()));
+
+    // Compile the material instance in instance compilation mode
+    mi::base::Handle<mi::neuraylib::ICompiled_material> compiled_material(
+        compile_material_instance(material_instance.get(), /*class_compilation=*/false));
+
+    m_link_unit->add_material(compiled_material.get(), nullptr, 0, m_context.get());
+
+    auto context = m_context.get();
+    return print_messages(context);
+}
+
 
 // Constructor.
 void Material_compiler::init(
@@ -1071,7 +1091,7 @@ static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray)
                 neuray->get_api_component<mi::neuraylib::IMdl_compiler>());
 
             mc.init(mdl_compiler.get(), mdl_factory.get(), transaction.get());
-
+/*
             // Add material sub-expressions of different materials to the link unit.
 #if defined(USE_SSBO) || defined(REMAP_NOISE_FUNCTIONS)
             // this uses a lot of constant data
@@ -1090,6 +1110,9 @@ static GLuint setup_material(mi::base::Handle<mi::neuraylib::INeuray> neuray)
                 "::nvidia::sdk_examples::tutorials::example_execution3",
                 "surface.scattering.tint", "tint_3");
 #endif
+*/
+
+            mc.add_material("::nvidia::sdk_examples::gun_metal::gun_metal");
         }
 
         target_code = mc.generate_glsl();

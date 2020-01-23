@@ -258,7 +258,6 @@ void generate_hlsl(
     std::cout << code_hlsl->get_code() << std::endl;
 }
 
-#ifndef MDL_SOURCE_RELEASE
 // Generates GLSL target code for a subexpression of a given compiled material.
 void generate_glsl(
     mi::neuraylib::ITransaction* transaction,
@@ -285,7 +284,6 @@ void generate_glsl(
               << "\":" << std::endl << std::endl;
     std::cout << code_glsl->get_code() << std::endl;
 }
-#endif // MDL_SOURCE_RELEASE
 
 void usage( char const *prog_name)
 {
@@ -394,6 +392,7 @@ int main( int argc, char* argv[])
             }
 
             // Use the various backends to generate target code for some material expression.
+            /*
             generate_llvm_ir(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -410,7 +409,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
-#ifndef MDL_SOURCE_RELEASE
+            */
             generate_glsl(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -419,7 +418,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
-#endif /*MDL_SOURCE_RELEASE*/
+/*
             generate_hlsl(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -428,6 +427,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
+*/
         }
 
         transaction->commit();
