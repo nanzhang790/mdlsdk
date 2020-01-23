@@ -34,8 +34,8 @@ struct Options {
     // The constructor.
     Options()
         : material_name("::nvidia::sdk_examples::tutorials::example_compilation")
-        , expr_path("backface.scattering.tint")
-        , change_arguments(true)
+        , expr_path("surface.scattering.tint")
+        , change_arguments(false)
     {
     }
 };
@@ -418,7 +418,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
-/*
+            /*
             generate_hlsl(
                 transaction.get(), mdl_compiler.get(), context.get(),
                 instance_compilation_name.c_str(),
@@ -427,7 +427,7 @@ int main( int argc, char* argv[])
                 transaction.get(), mdl_compiler.get(), context.get(),
                 class_compilation_name.c_str(),
                 options.expr_path.c_str(), "tint");
-*/
+            */
         }
 
         transaction->commit();
